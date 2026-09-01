@@ -1,5 +1,5 @@
 import streamlit as st
-from database import create_project
+from database import create_project, get_projects
 
 
 def apply_styles():
