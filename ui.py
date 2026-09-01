@@ -158,7 +158,7 @@ def show_projects():
                     {
                         "Projekt": project["name"],
                         "Stav": project["status"],
-                        "Vytvorený": project["created_at"]
+                        "Vytvorený": project["createds_at"]
                     }
                 )
 
