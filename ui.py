@@ -1,8 +1,8 @@
 import streamlit as st
+from database import create_project
 
 
 def apply_styles():
-
     st.markdown("""
     <style>
 
@@ -48,11 +48,9 @@ def apply_styles():
 
 
 def show_sidebar():
-
     apply_styles()
 
     with st.sidebar:
-
         st.title("KSP Generator")
 
         menu = st.selectbox(
@@ -69,7 +67,6 @@ def show_sidebar():
 
 
 def show_page(menu):
-
     if menu == "Nový projekt":
         show_new_project()
 
@@ -84,7 +81,6 @@ def show_page(menu):
 
 
 def show_new_project():
-
     st.title("📋 Nový projekt")
 
     st.info(
@@ -101,7 +97,6 @@ def show_new_project():
     col1, col2 = st.columns(2)
 
     with col1:
-
         technical_report = st.file_uploader(
             "Technická správa",
             type=["pdf", "docx"]
@@ -113,7 +108,6 @@ def show_new_project():
         )
 
     with col2:
-
         drawings = st.file_uploader(
             "Výkresy",
             type=["pdf"],
@@ -126,25 +120,27 @@ def show_new_project():
         )
 
     if st.button(
-    "Vytvoriť projekt",
-    use_container_width=True
+        "Vytvoriť projekt",
+        use_container_width=True
     ):
-    if not project_name:
-        st.warning("Zadaj názov projektu.")
-    else:
-        try:
-            create_project(project_name)
+        if not project_name:
+            st.warning("Zadaj názov projektu.")
 
-            st.success(
-                f"Projekt '{project_name}' bol uložený do databázy."
-            )
+        else:
+            try:
+                create_project(project_name)
 
-        except Exception as e:
-            st.error(f"Chyba pri ukladaní projektu: {e}")
+                st.success(
+                    f"Projekt '{project_name}' bol uložený do databázy."
+                )
+
+            except Exception as e:
+                st.error(
+                    f"Chyba pri ukladaní projektu: {e}"
+                )
 
 
 def show_projects():
-
     st.title("📁 Moje projekty")
 
     st.info(
@@ -165,7 +161,6 @@ def show_projects():
 
 
 def show_ksp_documents():
-
     st.title("📑 KSP dokumenty")
 
     st.info(
@@ -174,7 +169,6 @@ def show_ksp_documents():
 
 
 def show_ai_assistant():
-
     st.title("🤖 AI asistent pre KSP")
 
     project = st.selectbox(
@@ -192,9 +186,10 @@ def show_ai_assistant():
     )
 
     if st.button("Odoslať AI"):
-
         if not question:
-            st.warning("Napíš otázku alebo požiadavku.")
+            st.warning(
+                "Napíš otázku alebo požiadavku."
+            )
 
         else:
             st.info(
