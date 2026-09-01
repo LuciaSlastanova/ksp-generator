@@ -38,7 +38,7 @@ def get_projects():
         supabase
         .table("projects")
         .select("*")
-        .order("created_at", desc=True)
+        .order("createds_at", desc=True)
         .execute()
     )
 
