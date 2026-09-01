@@ -126,12 +126,21 @@ def show_new_project():
         )
 
     if st.button(
-        "Vytvoriť projekt",
-        use_container_width=True
+    "Vytvoriť projekt",
+    use_container_width=True
     ):
-        st.success(
-            f"Projekt '{project_name}' bude uložený po pripojení databázy."
-        )
+    if not project_name:
+        st.warning("Zadaj názov projektu.")
+    else:
+        try:
+            create_project(project_name)
+
+            st.success(
+                f"Projekt '{project_name}' bol uložený do databázy."
+            )
+
+        except Exception as e:
+            st.error(f"Chyba pri ukladaní projektu: {e}")
 
 
 def show_projects():
