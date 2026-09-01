@@ -141,23 +141,37 @@ def show_new_project():
 
 
 def show_projects():
+
     st.title("📁 Moje projekty")
 
-    st.info(
-        "Tu budú projekty uložené v databáze."
-    )
+    try:
+        projects = get_projects()
 
-    st.dataframe(
-        [
-            {
-                "Projekt": "Jahodná – kanalizácia",
-                "Stav": "Rozpracované",
-                "Posledná zmena": "01.09.2026"
-            }
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
+        if not projects:
+            st.info("Zatiaľ nemáš uložený žiadny projekt.")
+
+        else:
+            table_data = []
+
+            for project in projects:
+                table_data.append(
+                    {
+                        "Projekt": project["name"],
+                        "Stav": project["status"],
+                        "Vytvorený": project["created_at"]
+                    }
+                )
+
+            st.dataframe(
+                table_data,
+                use_container_width=True,
+                hide_index=True
+            )
+
+    except Exception as e:
+        st.error(
+            f"Chyba pri načítaní projektov: {e}"
+        )
 
 
 def show_ksp_documents():
