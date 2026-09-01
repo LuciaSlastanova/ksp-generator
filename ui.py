@@ -1,5 +1,7 @@
 import streamlit as st
+
 from database import create_project, get_projects
+from ai import improve_technical_procedure
 
 
 def apply_styles():
@@ -141,7 +143,6 @@ def show_new_project():
 
 
 def show_projects():
-
     st.title("📁 Moje projekty")
 
     try:
@@ -185,27 +186,56 @@ def show_ksp_documents():
 def show_ai_assistant():
     st.title("🤖 AI asistent pre KSP")
 
-    project = st.selectbox(
-        "Projekt",
-        [
-            "Jahodná – kanalizácia"
-        ]
+    st.write(
+        "Vlož technologický postup alebo časť KSP a napíš, čo chceš zmeniť."
     )
 
-    question = st.text_area(
-        "Napíš otázku alebo požiadavku na zmenu",
+    procedure_text = st.text_area(
+        "Pôvodný technologický postup / časť KSP",
+        height=250,
         placeholder=(
-            "napr. Pridaj skúšku zhutnenia po každej vrstve."
+            "Sem vlož napríklad postup uloženia kanalizačného potrubia..."
         )
     )
 
-    if st.button("Odoslať AI"):
-        if not question:
+    instruction = st.text_area(
+        "Čo má AI upraviť?",
+        height=120,
+        placeholder=(
+            "napr. Skontroluj technologické poradie, "
+            "doplň chýbajúce kontroly a skúšky."
+        )
+    )
+
+    if st.button(
+        "Upraviť pomocou AI",
+        use_container_width=True
+    ):
+        if not procedure_text:
             st.warning(
-                "Napíš otázku alebo požiadavku."
+                "Najprv vlož technologický postup."
+            )
+
+        elif not instruction:
+            st.warning(
+                "Napíš, čo má AI upraviť."
             )
 
         else:
-            st.info(
-                "AI pripojíme v ďalšom kroku."
-            )
+            try:
+                with st.spinner(
+                    "AI spracováva technologický postup..."
+                ):
+                    result = improve_technical_procedure(
+                        procedure_text,
+                        instruction
+                    )
+
+                st.markdown("### Návrh AI")
+
+                st.write(result)
+
+            except Exception as e:
+                st.error(
+                    f"Chyba pri AI spracovaní: {e}"
+                )
