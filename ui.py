@@ -85,7 +85,7 @@ def show_page(menu):
         show_projects()
 
     elif menu == "Detail projektu":
-    show_project_detail()
+        show_project_detail()
 
     elif menu == "KSP dokumenty":
         show_ksp_documents()
