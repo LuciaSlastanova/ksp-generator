@@ -108,6 +108,81 @@ def get_projects():
 
 
 # --------------------------------------------------
+# ULOŽENIE HLAVIČKY PROJEKTU
+# --------------------------------------------------
+
+def save_project_header(
+    project_id,
+    header_metadata
+):
+    """
+    Uloží finálnu, používateľom skontrolovanú
+    hlavičku KSP priamo k projektu.
+    """
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("projects")
+        .update(
+            {
+                "header_metadata":
+                    header_metadata
+            }
+        )
+        .eq(
+            "id",
+            project_id
+        )
+        .execute()
+    )
+
+    if response.data:
+        return response.data[0]
+
+    return None
+
+
+# --------------------------------------------------
+# NAČÍTANIE ULOŽENEJ HLAVIČKY PROJEKTU
+# --------------------------------------------------
+
+def get_project_header(
+    project_id
+):
+    """
+    Načíta uloženú finálnu hlavičku KSP.
+    """
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("projects")
+        .select(
+            "header_metadata"
+        )
+        .eq(
+            "id",
+            project_id
+        )
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return None
+
+    return (
+        response.data[0]
+        .get(
+            "header_metadata"
+        )
+    )
+
+
+# --------------------------------------------------
 # NAHRATIE SÚBORU K PROJEKTU
 # --------------------------------------------------
 
