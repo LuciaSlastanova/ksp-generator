@@ -182,19 +182,13 @@ Nevkladaj žiadny text mimo JSON.
         .strip()
     )
 
-    if raw_result.startswith(
-        "```json"
-    ):
+    if raw_result.startswith("```json"):
         raw_result = raw_result[7:]
 
-    if raw_result.startswith(
-        "```"
-    ):
+    if raw_result.startswith("```"):
         raw_result = raw_result[3:]
 
-    if raw_result.endswith(
-        "```"
-    ):
+    if raw_result.endswith("```"):
         raw_result = raw_result[:-3]
 
     return json.loads(
@@ -208,8 +202,11 @@ Nevkladaj žiadny text mimo JSON.
 
 def extract_project_metadata(text):
     """
-    Zistí údaje pre hlavičku KSP
-    a porovná ich medzi projektovými dokumentmi.
+    Zistí údaje pre hlavičku KSP.
+    Každý údaj vracia:
+    - value
+    - status
+    - source
     """
 
     client = get_openai_client()
@@ -218,215 +215,305 @@ def extract_project_metadata(text):
         model="gpt-5.6-terra",
 
         instructions="""
-Si AI systém na kontrolu údajov
-stavebného projektu.
+Si AI systém na kontrolu hlavičky
+stavebného KSP.
 
 Tvojou úlohou je z poskytnutých dokumentov
-zistiť údaje pre hlavičku KSP:
+zistiť iba tieto údaje:
 
 - STAVBA
 - OBJEKT / SO
+- ČASŤ
 - ZHOTOVITEĽ
 - OBJEDNÁVATEĽ / INVESTOR
 
+Pri každom údaji musíš uviesť aj ZDROJ.
+
 
 ========================================
-ZDROJE
+VŠEOBECNÉ PRAVIDLO
 ========================================
 
-Dokument môže obsahovať:
+Použi iba údaje,
+ktoré sú v dokumentoch výslovne uvedené.
 
-- technickú správu
-- cenovú ponuku
-- rozpočet
-- titulnú stranu ZoD
-- časť Zmluvy o dielo
+Nedomýšľaj význam
+z bežného technického alebo opisného textu.
 
-ZoD môže byť vložená priamo
-na začiatku technickej správy.
+Ak si nie si istý,
+použi:
 
-Nehľadaj iba presný názov dokumentu.
-Čítaj jeho obsah.
+value = "OVERIŤ"
+status = "OVERIŤ"
+source = "nenájdené"
 
 
 ========================================
 STAVBA
 ========================================
 
-Primárne hľadaj názov stavby v:
+STAVBA znamená názov celej stavby.
 
-1. technickej správe
-2. Zmluve o dielo / ZoD
-3. cenovej ponuke alebo rozpočte
+Primárny zdroj je ZoD.
 
-Ak sa názvy významovo zhodujú,
-použi najúplnejší názov.
+Hľadaj najmä označenia:
 
-Príklad:
+- Názov stavby
+- Stavba
+- Názov diela
+- Predmet stavby
 
-"JAHODNÁ - KANALIZÁCIA"
+PRIORITA:
 
-a
+1. ZoD
+2. technická správa
+3. cenová ponuka / rozpočet
 
-"JAHODNÁ - KANALIZÁCIA - II. etapa"
+Ak sa v ZoD nachádza napríklad:
 
-sa môžu považovať za zhodné,
-ak dokumenty jasne patria
-k tomu istému projektu.
+"Názov stavby: Jahodná - kanalizácia II. etapa"
+
+použi presne tento údaj ako STAVBU.
+
+Ak sa rovnaký alebo významovo rovnaký názov
+nachádza aj v ďalších dokumentoch,
+status = ZHODA
+source = "viac zdrojov"
+
+Ak je jasne uvedený iba v ZoD
+a nič mu neodporuje,
+status = ZHODA
+source = "ZoD"
 
 
 ========================================
 OBJEKT / SO
 ========================================
 
-Hľadaj napríklad:
+OBJEKT znamená konkrétny stavebný objekt.
 
+Použi iba údaj,
+ktorý je výslovne označený napríklad ako:
+
+- Objekt
+- Stavebný objekt
 - SO
-- stavebný objekt
-- objekt
-- časť stavby
+- Číslo a názov objektu
+- Objekt stavby
+
+Príklady správnych objektov:
+
+"SO 01 Kanalizácia"
+"SO 02 Čerpacia stanica"
+"Objekt: SO 03 Prípojky"
+
+NEPOUŽÍVAJ ako objekt
+iba všeobecný opis prác alebo technológie.
+
+Tieto výrazy NESMÚ byť automaticky objekt:
+
 - stoková sieť
+- gravitačná kanalizácia
 - kanalizačné prípojky
+- výtlačné potrubie
 - čerpacia stanica
 
-Primárne používaj technickú správu.
+Tieto výrazy môžeš použiť ako objekt iba vtedy,
+ak dokument výslovne uvádza napríklad:
 
-Porovnaj s:
-- rozpočtom
-- ZoD
-- cenovou ponukou
+"Objekt: Stoková sieť"
 
-Ak je objektov viac,
-uveď ich prehľadne.
+alebo:
 
-Nevytváraj číslo SO,
-ak v dokumentoch nie je uvedené.
+"SO 01 Stoková sieť"
+
+Ak explicitný objekt alebo SO
+v dokumentoch nenájdeš:
+
+value = "OVERIŤ"
+status = "OVERIŤ"
+source = "nenájdené"
+
+
+========================================
+ČASŤ
+========================================
+
+ČASŤ znamená konkrétnu časť stavby alebo zákazky.
+
+Primárny zdroj pre ČASŤ je:
+
+1. cenová ponuka
+2. rozpočet
+3. technická správa
+4. ZoD
+
+Hľadaj údaje označené napríklad ako:
+
+- Časť
+- Časť stavby
+- Časť zákazky
+- Etapa
+- Predmet cenovej ponuky
+- Názov časti
+- časť objektu
+
+DÔLEŽITÉ:
+
+Ak cenová ponuka alebo rozpočet
+má názov alebo nadpis,
+ktorý jednoznačne označuje konkrétnu časť
+realizovaných prác,
+môžeš ho použiť ako ČASŤ.
+
+Ale nesmieš použiť všeobecný technický opis,
+ak nie je zrejmé, že ide o názov časti.
+
+Príklad:
+
+Ak cenová ponuka jasne uvádza napríklad:
+
+"Časť: Kanalizácia - stoková sieť"
+
+použi túto hodnotu.
+
+Ak je v cenovej ponuke iba zoznam položiek,
+bez jednoznačného názvu časti:
+
+value = "OVERIŤ"
+status = "OVERIŤ"
+source = "nenájdené"
+
+Nikdy nepouži starú hodnotu
+zo vzorovej KSP mustry.
 
 
 ========================================
 ZHOTOVITEĽ
 ========================================
 
-Hľadaj aj označenia:
+Primárny zdroj je ZoD.
+
+Hľadaj výslovne označenia:
 
 - Zhotoviteľ
 - Dodávateľ
 - Zhotoviteľ diela
-- Dodávateľ stavby
 - Zmluvná strana - zhotoviteľ
 
-Primárne používaj:
+PRIORITA:
 
 1. ZoD
-2. cenovú ponuku
+2. cenová ponuka
 3. rozpočet
 
-Ak je pri označení firmy uvedený názov spoločnosti,
-IČO, sídlo alebo kontaktné údaje,
-považuj to za silný dôkaz.
+Ak ZoD jasne uvádza:
 
-NIKDY nepouži ako zhotoviteľa firmu,
-ktorá pochádza iba zo vzorového KSP
-alebo referenčného KSP.
+"Zhotoviteľ: AVA-stav, s.r.o."
+
+použi presne tento údaj.
+
+Ak nič tomuto údaju neodporuje:
+
+status = ZHODA
+source = "ZoD"
+
+NIKDY nepouži firmu
+z KSP mustry alebo referenčného KSP.
 
 
 ========================================
 OBJEDNÁVATEĽ / INVESTOR
 ========================================
 
-Hľadaj aj označenia:
+Primárny zdroj je ZoD.
+
+Hľadaj výslovne:
 
 - Objednávateľ
 - Investor
-- Objednávateľ diela
 - Stavebník
+- Objednávateľ diela
 - Zmluvná strana - objednávateľ
 
-Primárne používaj:
+PRIORITA:
 
 1. ZoD
-2. cenovú ponuku
+2. cenová ponuka
 3. rozpočet
-4. technickú správu
+4. technická správa
 
-Ak dokument jasne uvádza
-objednávateľa a jeho firmu,
-použi tento údaj.
+Ak ZoD jasne uvádza napríklad:
+
+"Objednávateľ: Obec Jahodná"
+
+použi presne tento údaj.
+
+Ak nič tomuto údaju neodporuje:
+
+status = ZHODA
+source = "ZoD"
 
 
 ========================================
-KONTROLA ZHODY
+ZDROJ
 ========================================
 
-Pre každý údaj nastav status.
+Pole "source" musí byť jedna z hodnôt:
+
+- "ZoD"
+- "technická správa"
+- "cenová ponuka / rozpočet"
+- "výkres"
+- "viac zdrojov"
+- "nenájdené"
+
+Ak je údaj nájdený iba v jednom dokumente,
+uveď tento konkrétny zdroj.
+
+Ak sa rovnaký údaj zhoduje
+vo viacerých zdrojoch:
+
+source = "viac zdrojov"
+
+
+========================================
+STATUS
+========================================
 
 ZHODA
-- údaj bol nájdený
-- dokumenty sa nebijú
-- alebo sa rovnaký údaj nachádza
-  vo viacerých dokumentoch
+- údaj je explicitne uvedený
+- nič mu neodporuje
 
 NEZHODA
 - dva dôveryhodné dokumenty
   uvádzajú rozdielne údaje
 
 OVERIŤ
-- údaj sa nepodarilo nájsť
-- je nejednoznačný
-- alebo nie je dostatok podkladov
-
-
-DÔLEŽITÉ:
-
-Ak je údaj jasne uvedený iba v jednom
-dôveryhodnom dokumente a nič mu neodporuje,
-môžeš ho použiť.
-
-Nemusíš vyžadovať,
-aby bol rovnaký údaj uvedený dvakrát.
-
-V takom prípade môže byť status ZHODA.
+- údaj nie je explicitne uvedený
+- údaj je nejednoznačný
+- alebo by si ho musel domyslieť
 
 
 ========================================
 ZAKÁZANÉ ZDROJE PRE HLAVIČKU
 ========================================
 
-Ak by sa v texte nachádzal obsah:
+Údaje z:
 
 - KSP mustry
 - vzorového KSP
 - referenčného KSP
 
-ich údaje o:
+nesmú určovať:
 
-- starej stavbe
-- starom objekte
-- starej firme
-- starom objednávateľovi
-- starom zhotoviteľovi
-
-IGNORUJ.
-
-Tieto dokumenty nesmú určovať
-hlavičku nového projektu.
-
-
-========================================
-ZÁKAZ DOMÝŠĽANIA
-========================================
-
-Nevymýšľaj:
-
-- názov firmy
+- stavbu
 - objekt
-- číslo SO
+- časť
 - objednávateľa
 - zhotoviteľa
-- názov stavby
 
-Ak údaj naozaj nie je v podkladoch,
-použi OVERIŤ.
+Tieto staré údaje ignoruj.
 
 
 ========================================
@@ -438,22 +525,32 @@ Vráť iba validný JSON:
 {
   "stavba": {
     "value": "...",
-    "status": "ZHODA"
+    "status": "ZHODA",
+    "source": "ZoD"
   },
 
   "objekt": {
     "value": "...",
-    "status": "ZHODA"
+    "status": "OVERIŤ",
+    "source": "nenájdené"
+  },
+
+  "cast": {
+    "value": "...",
+    "status": "OVERIŤ",
+    "source": "cenová ponuka / rozpočet"
   },
 
   "zhotovitel": {
     "value": "...",
-    "status": "ZHODA"
+    "status": "ZHODA",
+    "source": "ZoD"
   },
 
   "objednavatel": {
     "value": "...",
-    "status": "ZHODA"
+    "status": "ZHODA",
+    "source": "ZoD"
   }
 }
 
@@ -474,19 +571,13 @@ Nevkladaj žiadny text mimo JSON.
         .strip()
     )
 
-    if raw_result.startswith(
-        "```json"
-    ):
+    if raw_result.startswith("```json"):
         raw_result = raw_result[7:]
 
-    if raw_result.startswith(
-        "```"
-    ):
+    if raw_result.startswith("```"):
         raw_result = raw_result[3:]
 
-    if raw_result.endswith(
-        "```"
-    ):
+    if raw_result.endswith("```"):
         raw_result = raw_result[:-3]
 
     return json.loads(
