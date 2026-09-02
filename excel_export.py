@@ -1,4 +1,5 @@
 import io
+import json
 from copy import copy
 
 from openpyxl import load_workbook
@@ -43,11 +44,6 @@ def normalize_text(value):
 
 
 def is_empty_metadata_value(value):
-    """
-    OVERIŤ alebo prázdna hodnota znamená,
-    že starý údaj z mustry sa má vymazať.
-    """
-
     if value is None:
         return True
 
@@ -137,6 +133,152 @@ def copy_cell_style(
     target_cell.number_format = (
         source_cell.number_format
     )
+
+
+# --------------------------------------------------
+# KONTROLA RIADKOV Z AI
+# --------------------------------------------------
+
+def normalize_ksp_rows(ksp_rows):
+    """
+    Zabezpečí, že do Excelu ide vždy
+    zoznam dictionary objektov.
+
+    Podporuje napríklad:
+
+    [
+        {...},
+        {...}
+    ]
+
+    aj:
+
+    {
+        "rows": [
+            {...},
+            {...}
+        ]
+    }
+
+    aj JSON uložený ako text.
+    """
+
+    # ------------------------------------------
+    # AK PRIŠIEL JSON AKO TEXT
+    # ------------------------------------------
+
+    if isinstance(
+        ksp_rows,
+        str
+    ):
+
+        text = ksp_rows.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+
+        elif text.startswith("```"):
+            text = text[3:]
+
+        if text.endswith("```"):
+            text = text[:-3]
+
+        try:
+            ksp_rows = json.loads(
+                text.strip()
+            )
+
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "AI vrátila text, ktorý nie je "
+                "platný JSON pre KSP."
+            ) from e
+
+    # ------------------------------------------
+    # AK AI VRÁTILA OBJEKT S POĽOM ROWS
+    # ------------------------------------------
+
+    if isinstance(
+        ksp_rows,
+        dict
+    ):
+
+        found_rows = None
+
+        for key in [
+            "rows",
+            "ksp_rows",
+            "items",
+            "data"
+        ]:
+
+            value = ksp_rows.get(
+                key
+            )
+
+            if isinstance(
+                value,
+                list
+            ):
+                found_rows = value
+                break
+
+        # Mohol prísť aj jeden jediný riadok
+        if found_rows is None:
+
+            if (
+                "subproces"
+                in ksp_rows
+            ):
+                found_rows = [
+                    ksp_rows
+                ]
+
+        if found_rows is None:
+            raise ValueError(
+                "AI vrátila JSON objekt, "
+                "ale nenašiel sa zoznam riadkov KSP."
+            )
+
+        ksp_rows = found_rows
+
+    # ------------------------------------------
+    # MUSÍ TO BYŤ LIST
+    # ------------------------------------------
+
+    if not isinstance(
+        ksp_rows,
+        list
+    ):
+        raise ValueError(
+            "Riadky KSP nemajú správny formát."
+        )
+
+    clean_rows = []
+
+    for item in ksp_rows:
+
+        # Textový prvok ignorovať nechceme,
+        # radšej zobrazíme zrozumiteľnú chybu.
+        if not isinstance(
+            item,
+            dict
+        ):
+            raise ValueError(
+                "Jeden z riadkov KSP nie je "
+                "v správnom JSON formáte."
+            )
+
+        clean_rows.append(
+            item
+        )
+
+    if not clean_rows:
+        raise ValueError(
+            "AI nevytvorila žiadne riadky KSP."
+        )
+
+    return clean_rows
 
 
 # --------------------------------------------------
@@ -303,7 +445,7 @@ def find_title_worksheet(workbook):
 
 
 # --------------------------------------------------
-# HLAVIČKA - NÁJDENIE LABELU
+# HLAVIČKA
 # --------------------------------------------------
 
 def find_label_cell(
@@ -371,6 +513,7 @@ def find_value_cell_next_to_label(
         return None
 
     row = label_cell.row
+
     start_column = (
         label_cell.column + 1
     )
@@ -403,20 +546,11 @@ def find_value_cell_next_to_label(
     return None
 
 
-# --------------------------------------------------
-# ZÁPIS / VYMAZANIE HLAVIČKY
-# --------------------------------------------------
-
 def set_header_value(
     worksheet,
     labels,
     value
 ):
-    """
-    Ak je value OVERIŤ alebo prázdna,
-    starý údaj z mustry sa vymaže.
-    """
-
     label_cell = find_label_cell(
         worksheet,
         labels
@@ -450,10 +584,6 @@ def clear_header_value(
     worksheet,
     labels
 ):
-    """
-    Vynútené vymazanie starej hodnoty z mustry.
-    """
-
     label_cell = find_label_cell(
         worksheet,
         labels
@@ -477,9 +607,48 @@ def clear_header_value(
     return True
 
 
-# --------------------------------------------------
-# AKTUALIZÁCIA HLAVIČKY
-# --------------------------------------------------
+def get_metadata_value(
+    metadata,
+    field
+):
+    """
+    Podporí oba tvary:
+
+    "stavba": {
+        "value": "..."
+    }
+
+    aj:
+
+    "stavba": "..."
+    """
+
+    if not isinstance(
+        metadata,
+        dict
+    ):
+        return None
+
+    item = metadata.get(
+        field
+    )
+
+    if isinstance(
+        item,
+        dict
+    ):
+        return item.get(
+            "value"
+        )
+
+    if isinstance(
+        item,
+        str
+    ):
+        return item
+
+    return None
+
 
 def update_project_header(
     worksheet,
@@ -488,39 +657,30 @@ def update_project_header(
     if not metadata:
         return
 
-    stavba = (
-        metadata
-        .get("stavba", {})
-        .get("value")
+    stavba = get_metadata_value(
+        metadata,
+        "stavba"
     )
 
-    objekt = (
-        metadata
-        .get("objekt", {})
-        .get("value")
+    objekt = get_metadata_value(
+        metadata,
+        "objekt"
     )
 
-    cast = (
-        metadata
-        .get("cast", {})
-        .get("value")
+    cast = get_metadata_value(
+        metadata,
+        "cast"
     )
 
-    zhotovitel = (
-        metadata
-        .get("zhotovitel", {})
-        .get("value")
+    zhotovitel = get_metadata_value(
+        metadata,
+        "zhotovitel"
     )
 
-    objednavatel = (
-        metadata
-        .get("objednavatel", {})
-        .get("value")
+    objednavatel = get_metadata_value(
+        metadata,
+        "objednavatel"
     )
-
-    # ------------------------------------------
-    # STAVBA
-    # ------------------------------------------
 
     set_header_value(
         worksheet,
@@ -532,10 +692,6 @@ def update_project_header(
         stavba
     )
 
-    # ------------------------------------------
-    # OBJEKT
-    # ------------------------------------------
-
     set_header_value(
         worksheet,
         [
@@ -546,10 +702,6 @@ def update_project_header(
         objekt
     )
 
-    # ------------------------------------------
-    # ČASŤ
-    # ------------------------------------------
-
     set_header_value(
         worksheet,
         [
@@ -558,10 +710,6 @@ def update_project_header(
         ],
         cast
     )
-
-    # ------------------------------------------
-    # OBJEDNÁVATEĽ 1
-    # ------------------------------------------
 
     set_header_value(
         worksheet,
@@ -574,10 +722,6 @@ def update_project_header(
         objednavatel
     )
 
-    # ------------------------------------------
-    # ZHOTOVITEĽ
-    # ------------------------------------------
-
     set_header_value(
         worksheet,
         [
@@ -587,12 +731,8 @@ def update_project_header(
         zhotovitel
     )
 
-    # ------------------------------------------
-    # OBJEDNÁVATEĽ 2
-    # ------------------------------------------
-    # Tento projekt ho nemá.
-    # Starý údaj z mustry odstránime.
-
+    # Starý druhý objednávateľ
+    # z mustry sa vždy odstráni.
     clear_header_value(
         worksheet,
         [
@@ -602,7 +742,7 @@ def update_project_header(
 
 
 # --------------------------------------------------
-# VYČISTENIE PÔVODNÝCH KSP RIADKOV
+# PÔVODNÉ KSP RIADKY
 # --------------------------------------------------
 
 def clear_existing_ksp_rows(
@@ -639,6 +779,14 @@ def create_ksp_excel(
     ksp_rows,
     metadata=None
 ):
+    # ------------------------------------------
+    # NAJPRV OVERÍME DÁTA KSP
+    # ------------------------------------------
+
+    ksp_rows = normalize_ksp_rows(
+        ksp_rows
+    )
+
     template_file = io.BytesIO(
         template_bytes
     )
@@ -648,7 +796,7 @@ def create_ksp_excel(
     )
 
     # ------------------------------------------
-    # NÁJDEME KSP LIST
+    # KSP LIST
     # ------------------------------------------
 
     ksp_worksheet = (
@@ -658,7 +806,7 @@ def create_ksp_excel(
     )
 
     # ------------------------------------------
-    # NÁJDEME TITULNÝ LIST
+    # TITULNÝ LIST
     # ------------------------------------------
 
     title_worksheet = (
@@ -668,7 +816,7 @@ def create_ksp_excel(
     )
 
     # ------------------------------------------
-    # HLAVIČKA KSP LISTU
+    # HLAVIČKA KSP
     # ------------------------------------------
 
     update_project_header(
@@ -677,7 +825,7 @@ def create_ksp_excel(
     )
 
     # ------------------------------------------
-    # HLAVIČKA TITULNÉHO LISTU
+    # TITULNÝ LIST
     # ------------------------------------------
 
     if (
@@ -692,7 +840,7 @@ def create_ksp_excel(
         )
 
     # ------------------------------------------
-    # VYČISTENIE KSP RIADKOV
+    # VYČISTENIE STARÝCH KSP RIADKOV
     # ------------------------------------------
 
     style_source_row = (
@@ -705,7 +853,7 @@ def create_ksp_excel(
     )
 
     # ------------------------------------------
-    # ZÁPIS NOVÝCH RIADKOV
+    # NOVÉ RIADKY
     # ------------------------------------------
 
     for index, item in enumerate(
