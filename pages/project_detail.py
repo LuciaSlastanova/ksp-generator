@@ -5,7 +5,9 @@ from database import (
     get_project_documents,
     upload_project_file,
     download_project_file,
-    delete_project_document
+    delete_project_document,
+    save_project_header,
+    get_project_header
 )
 
 from file_processing import extract_text_from_file
@@ -50,6 +52,25 @@ Súbor: {doc['file_name']}
         )
 
     return "\n".join(text_parts)
+
+
+def get_saved_header_value(saved_header, field):
+    """
+    Podporuje uloženú hlavičku vo forme:
+    {"stavba": "..."}
+    aj starší vnorený tvar:
+    {"stavba": {"value": "..."}}
+    """
+
+    if not isinstance(saved_header, dict):
+        return ""
+
+    value = saved_header.get(field, "")
+
+    if isinstance(value, dict):
+        return str(value.get("value", "") or "")
+
+    return str(value or "")
 
 
 # --------------------------------------------------
@@ -115,6 +136,36 @@ def show_project_detail():
         excel_key = (
             f"ksp_excel_{project_id}"
         )
+
+        # ==================================================
+        # ULOŽENÁ HLAVIČKA PROJEKTU
+        # ==================================================
+
+        saved_header = get_project_header(
+            project_id
+        )
+
+        if saved_header:
+
+            for field in [
+                "stavba",
+                "objekt",
+                "cast",
+                "zhotovitel",
+                "objednavatel"
+            ]:
+
+                field_key = (
+                    f"header_{field}_{project_id}"
+                )
+
+                if field_key not in st.session_state:
+                    st.session_state[field_key] = (
+                        get_saved_header_value(
+                            saved_header,
+                            field
+                        )
+                    )
 
         # ==================================================
         # EXISTUJÚCE PODKLADY
@@ -450,15 +501,17 @@ def show_project_detail():
                     ] = value
 
         # ==================================================
-        # EDITOVATEĽNÁ HLAVIČKA
+        # EDITOVATEĽNÁ HLAVIČKA + ULOŽENIE
         # ==================================================
 
-        if metadata_key in st.session_state:
+        if (
+            metadata_key in st.session_state
+            or saved_header
+        ):
 
-            metadata = (
-                st.session_state[
-                    metadata_key
-                ]
+            metadata = st.session_state.get(
+                metadata_key,
+                {}
             )
 
             st.markdown(
@@ -466,115 +519,96 @@ def show_project_detail():
             )
 
             st.info(
-                "Ak je niečo označené OVERIŤ "
-                "alebo je údaj nesprávny, "
-                "prepíš ho priamo v poli."
+                "Údaje môžeš ručne opraviť. "
+                "Po oprave klikni na "
+                "💾 Uložiť hlavičku projektu."
             )
 
-            # ------------------------------------------
-            # STAVBA
-            # ------------------------------------------
+            fields = [
+                ("stavba", "Stavba"),
+                ("objekt", "Objekt / SO"),
+                ("cast", "Časť"),
+                ("zhotovitel", "Zhotoviteľ"),
+                (
+                    "objednavatel",
+                    "Objednávateľ / investor"
+                )
+            ]
 
-            stavba_info = metadata.get(
-                "stavba",
-                {}
-            )
+            for field, label in fields:
 
-            st.caption(
-                f"AI kontrola: "
-                f"{stavba_info.get('status', 'OVERIŤ')} | "
-                f"Zdroj: "
-                f"{stavba_info.get('source', 'nenájdené')}"
-            )
+                field_info = metadata.get(
+                    field,
+                    {}
+                )
 
-            st.text_input(
-                "Stavba",
-                key=f"header_stavba_{project_id}"
-            )
+                if field_info:
+                    st.caption(
+                        f"AI kontrola: "
+                        f"{field_info.get('status', 'OVERIŤ')} | "
+                        f"Zdroj: "
+                        f"{field_info.get('source', 'nenájdené')}"
+                    )
 
-            # ------------------------------------------
-            # OBJEKT
-            # ------------------------------------------
+                elif saved_header:
+                    st.caption(
+                        "Načítané z uloženej hlavičky projektu."
+                    )
 
-            objekt_info = metadata.get(
-                "objekt",
-                {}
-            )
+                st.text_input(
+                    label,
+                    key=f"header_{field}_{project_id}"
+                )
 
-            st.caption(
-                f"AI kontrola: "
-                f"{objekt_info.get('status', 'OVERIŤ')} | "
-                f"Zdroj: "
-                f"{objekt_info.get('source', 'nenájdené')}"
-            )
+            if st.button(
+                "💾 Uložiť hlavičku projektu",
+                use_container_width=True
+            ):
 
-            st.text_input(
-                "Objekt / SO",
-                key=f"header_objekt_{project_id}"
-            )
+                header_to_save = {
+                    "stavba": st.session_state.get(
+                        f"header_stavba_{project_id}",
+                        ""
+                    ),
+                    "objekt": st.session_state.get(
+                        f"header_objekt_{project_id}",
+                        ""
+                    ),
+                    "cast": st.session_state.get(
+                        f"header_cast_{project_id}",
+                        ""
+                    ),
+                    "zhotovitel": st.session_state.get(
+                        f"header_zhotovitel_{project_id}",
+                        ""
+                    ),
+                    "objednavatel": st.session_state.get(
+                        f"header_objednavatel_{project_id}",
+                        ""
+                    )
+                }
 
-            # ------------------------------------------
-            # ČASŤ
-            # ------------------------------------------
+                saved_result = save_project_header(
+                    project_id,
+                    header_to_save
+                )
 
-            cast_info = metadata.get(
-                "cast",
-                {}
-            )
+                if saved_result:
+                    saved_header = header_to_save
 
-            st.caption(
-                f"AI kontrola: "
-                f"{cast_info.get('status', 'OVERIŤ')} | "
-                f"Zdroj: "
-                f"{cast_info.get('source', 'nenájdené')}"
-            )
+                    st.success(
+                        "Hlavička projektu bola uložená."
+                    )
 
-            st.text_input(
-                "Časť",
-                key=f"header_cast_{project_id}"
-            )
+                    st.session_state.pop(
+                        excel_key,
+                        None
+                    )
 
-            # ------------------------------------------
-            # ZHOTOVITEĽ
-            # ------------------------------------------
-
-            zhotovitel_info = metadata.get(
-                "zhotovitel",
-                {}
-            )
-
-            st.caption(
-                f"AI kontrola: "
-                f"{zhotovitel_info.get('status', 'OVERIŤ')} | "
-                f"Zdroj: "
-                f"{zhotovitel_info.get('source', 'nenájdené')}"
-            )
-
-            st.text_input(
-                "Zhotoviteľ",
-                key=f"header_zhotovitel_{project_id}"
-            )
-
-            # ------------------------------------------
-            # OBJEDNÁVATEĽ
-            # ------------------------------------------
-
-            objednavatel_info = metadata.get(
-                "objednavatel",
-                {}
-            )
-
-            st.caption(
-                f"AI kontrola: "
-                f"{objednavatel_info.get('status', 'OVERIŤ')} | "
-                f"Zdroj: "
-                f"{objednavatel_info.get('source', 'nenájdené')}"
-            )
-
-            st.text_input(
-                "Objednávateľ / investor",
-                key=f"header_objednavatel_{project_id}"
-            )
+                else:
+                    st.error(
+                        "Hlavičku sa nepodarilo uložiť."
+                    )
 
         # ==================================================
         # 2. GENEROVANIE KSP EXCEL
@@ -679,17 +713,23 @@ def show_project_detail():
                 st.text_area(
                     "Pokyny pre vytvorenie KSP",
                     value=(
-                        "Vytvor KSP pre tento projekt. "
-                        "Použi iba kontroly a skúšky "
-                        "z vybraného referenčného KSP. "
-                        "Projektové podklady použi na "
-                        "určenie rozsahu prác, materiálov "
-                        "a množstiev. "
-                        "Nevymýšľaj nové skúšky ani normy. "
-                        "Ak údaj nie je možné určiť, "
-                        "označ ho ako OVERIŤ."
+                        "Vytvor KSP podľa štruktúry, spôsobu zápisu "
+                        "a terminológie vybraného referenčného KSP. "
+                        "Použi iba kontroly a skúšky z vybraného "
+                        "referenčného KSP. "
+                        "Projektové podklady použi na určenie "
+                        "rozsahu prác, materiálov a množstiev. "
+                        "Nevymýšľaj nové skúšky, kontroly ani normy. "
+                        "Zaraď iba tie skúšky a kontroly, ktoré sú "
+                        "pre daný rozsah prác potrebné podľa projektu, "
+                        "platných predpisov alebo záväzných technických "
+                        "požiadaviek. "
+                        "Cieľom je KSP s čo najmenším potrebným "
+                        "rozsahom skúšok, ale technicky a právne správny. "
+                        "Ak niečo nie je možné jednoznačne určiť, "
+                        "označ to ako OVERIŤ."
                     ),
-                    height=150
+                    height=180
                 )
             )
 
@@ -712,57 +752,75 @@ def show_project_detail():
                 use_container_width=True
             ):
 
-                if (
-                    metadata_key
-                    not in st.session_state
-                ):
+                saved_header_now = get_project_header(
+                    project_id
+                )
+
+                if not saved_header_now:
 
                     st.warning(
-                        "Najprv skontroluj "
-                        "údaje hlavičky KSP."
+                        "Najprv skontroluj a ulož "
+                        "hlavičku projektu."
+                    )
+
+                    return
+
+                current_header = {
+                    "stavba": st.session_state.get(
+                        f"header_stavba_{project_id}",
+                        ""
+                    ),
+                    "objekt": st.session_state.get(
+                        f"header_objekt_{project_id}",
+                        ""
+                    ),
+                    "cast": st.session_state.get(
+                        f"header_cast_{project_id}",
+                        ""
+                    ),
+                    "zhotovitel": st.session_state.get(
+                        f"header_zhotovitel_{project_id}",
+                        ""
+                    ),
+                    "objednavatel": st.session_state.get(
+                        f"header_objednavatel_{project_id}",
+                        ""
+                    )
+                }
+
+                normalized_saved_header = {
+                    field: get_saved_header_value(
+                        saved_header_now,
+                        field
+                    )
+                    for field in [
+                        "stavba",
+                        "objekt",
+                        "cast",
+                        "zhotovitel",
+                        "objednavatel"
+                    ]
+                }
+
+                if current_header != normalized_saved_header:
+
+                    st.warning(
+                        "Hlavičku si zmenila. "
+                        "Najprv klikni na "
+                        "💾 Uložiť hlavičku projektu."
                     )
 
                     return
 
                 # --------------------------------------
-                # FINÁLNA HLAVIČKA PODĽA EDITOVANÝCH POLÍ
+                # FINÁLNA HLAVIČKA = ULOŽENÁ HLAVIČKA
                 # --------------------------------------
 
                 final_metadata = {
-                    "stavba": {
-                        "value": st.session_state.get(
-                            f"header_stavba_{project_id}",
-                            ""
-                        )
-                    },
-
-                    "objekt": {
-                        "value": st.session_state.get(
-                            f"header_objekt_{project_id}",
-                            ""
-                        )
-                    },
-
-                    "cast": {
-                        "value": st.session_state.get(
-                            f"header_cast_{project_id}",
-                            ""
-                        )
-                    },
-
-                    "zhotovitel": {
-                        "value": st.session_state.get(
-                            f"header_zhotovitel_{project_id}",
-                            ""
-                        )
-                    },
-
-                    "objednavatel": {
-                        "value": st.session_state.get(
-                            f"header_objednavatel_{project_id}",
-                            ""
-                        )
+                    field: {
+                        "value": normalized_saved_header[field]
                     }
+                    for field in normalized_saved_header
                 }
 
                 # --------------------------------------
