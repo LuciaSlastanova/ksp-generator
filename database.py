@@ -114,3 +114,18 @@ def get_project_documents(project_id):
     )
 
     return response.data
+
+
+def download_project_file(file_path):
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .storage
+        .from_(BUCKET_NAME)
+        .download(file_path)
+    )
+
+    return response
+
+   
