@@ -11,6 +11,12 @@ from database import (
 from ai import improve_technical_procedure
 from file_processing import extract_text_from_file
 
+from pages.project_detail import show_project_detail
+
+
+# --------------------------------------------------
+# VZHĽAD APLIKÁCIE
+# --------------------------------------------------
 
 def apply_styles():
     st.markdown("""
@@ -57,6 +63,10 @@ def apply_styles():
     """, unsafe_allow_html=True)
 
 
+# --------------------------------------------------
+# BOČNÉ MENU
+# --------------------------------------------------
+
 def show_sidebar():
     apply_styles()
 
@@ -77,7 +87,12 @@ def show_sidebar():
     return menu
 
 
+# --------------------------------------------------
+# NAVIGÁCIA
+# --------------------------------------------------
+
 def show_page(menu):
+
     if menu == "Nový projekt":
         show_new_project()
 
@@ -94,11 +109,16 @@ def show_page(menu):
         show_ai_assistant()
 
 
+# --------------------------------------------------
+# NOVÝ PROJEKT
+# --------------------------------------------------
+
 def show_new_project():
     st.title("📋 Nový projekt")
 
     st.info(
-        "Nahraj projektové podklady a aplikácia pripraví návrh KSP."
+        "Nahraj projektové podklady "
+        "a aplikácia pripraví návrh KSP."
     )
 
     project_name = st.text_input(
@@ -106,101 +126,141 @@ def show_new_project():
         placeholder="napr. Jahodná – kanalizácia"
     )
 
-    st.markdown("### 📄 Projektové podklady")
+    st.markdown(
+        "### 📄 Projektové podklady"
+    )
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         technical_report = st.file_uploader(
             "Technická správa",
-            type=["pdf", "docx", "doc"]
+            type=[
+                "pdf",
+                "docx",
+                "doc"
+            ]
         )
 
         budget = st.file_uploader(
             "Rozpočet",
-            type=["xlsx", "xls"]
+            type=[
+                "xlsx",
+                "xls"
+            ]
         )
 
     with col2:
+
         drawings = st.file_uploader(
             "Výkresy",
-            type=["pdf", "dwg", "dxf"],
+            type=[
+                "pdf",
+                "dwg",
+                "dxf"
+            ],
             accept_multiple_files=True
         )
 
         ksp_template = st.file_uploader(
             "KSP šablóna / mustra",
-            type=["xlsx", "xls"]
+            type=[
+                "xlsx",
+                "xls"
+            ]
         )
 
         reference_ksp = st.file_uploader(
             "Referenčný KSP – kontroly a skúšky",
-            type=["xlsx", "xls"]
+            type=[
+                "xlsx",
+                "xls"
+            ]
         )
 
-    st.markdown("### 💾 Uloženie projektu")
+    st.markdown(
+        "### 💾 Uloženie projektu"
+    )
 
     if st.button(
         "Vytvoriť projekt",
         use_container_width=True
     ):
+
         if not project_name:
-            st.warning("Zadaj názov projektu.")
+            st.warning(
+                "Zadaj názov projektu."
+            )
+            return
 
-        else:
-            try:
-                project = create_project(project_name)
+        try:
+            project = create_project(
+                project_name
+            )
 
-                if not project:
-                    st.error("Projekt sa nepodarilo vytvoriť.")
-                    return
-
-                project_id = project["id"]
-
-                if technical_report:
-                    upload_project_file(
-                        project_id,
-                        technical_report,
-                        "technical_report"
-                    )
-
-                if budget:
-                    upload_project_file(
-                        project_id,
-                        budget,
-                        "budget"
-                    )
-
-                if drawings:
-                    for drawing in drawings:
-                        upload_project_file(
-                            project_id,
-                            drawing,
-                            "drawing"
-                        )
-
-                if ksp_template:
-                    upload_project_file(
-                        project_id,
-                        ksp_template,
-                        "ksp_template"
-                    )
-
-                if reference_ksp:
-                    upload_project_file(
-                        project_id,
-                        reference_ksp,
-                        "reference_ksp"
-                    )
-
-                st.success(
-                    f"Projekt '{project_name}' a jeho podklady boli uložené."
-                )
-
-            except Exception as e:
+            if not project:
                 st.error(
-                    f"Chyba pri vytváraní projektu: {e}"
+                    "Projekt sa nepodarilo vytvoriť."
                 )
+                return
+
+            project_id = project["id"]
+
+            if technical_report:
+                upload_project_file(
+                    project_id,
+                    technical_report,
+                    "technical_report"
+                )
+
+            if budget:
+                upload_project_file(
+                    project_id,
+                    budget,
+                    "budget"
+                )
+
+            if drawings:
+                for drawing in drawings:
+                    upload_project_file(
+                        project_id,
+                        drawing,
+                        "drawing"
+                    )
+
+            if ksp_template:
+                upload_project_file(
+                    project_id,
+                    ksp_template,
+                    "ksp_template"
+                )
+
+            if reference_ksp:
+                upload_project_file(
+                    project_id,
+                    reference_ksp,
+                    "reference_ksp"
+                )
+
+            st.session_state[
+                "active_project"
+            ] = project_name
+
+            st.success(
+                f"Projekt '{project_name}' "
+                f"a jeho podklady boli uložené."
+            )
+
+        except Exception as e:
+            st.error(
+                f"Chyba pri vytváraní projektu: {e}"
+            )
+
+
+# --------------------------------------------------
+# MOJE PROJEKTY
+# --------------------------------------------------
 
 def show_projects():
     st.title("📁 Moje projekty")
@@ -209,7 +269,9 @@ def show_projects():
         projects = get_projects()
 
         if not projects:
-            st.info("Zatiaľ nemáš uložený žiadny projekt.")
+            st.info(
+                "Zatiaľ nemáš uložený žiadny projekt."
+            )
             return
 
         table_data = []
@@ -217,9 +279,14 @@ def show_projects():
         for project in projects:
             table_data.append(
                 {
-                    "Projekt": project["name"],
-                    "Stav": project["status"],
-                    "Vytvorený": project["createds_at"]
+                    "Projekt":
+                        project["name"],
+
+                    "Stav":
+                        project["status"],
+
+                    "Vytvorený":
+                        project["createds_at"]
                 }
             )
 
@@ -229,21 +296,44 @@ def show_projects():
             hide_index=True
         )
 
-        project_names = [p["name"] for p in projects]
+        project_names = [
+            project["name"]
+            for project in projects
+        ]
+
+        active_project = (
+            st.session_state.get(
+                "active_project"
+            )
+        )
+
+        default_index = 0
+
+        if active_project in project_names:
+            default_index = (
+                project_names.index(
+                    active_project
+                )
+            )
 
         selected_project = st.selectbox(
             "Vyber projekt",
-            project_names
+            project_names,
+            index=default_index
         )
 
         if st.button(
             "Otvoriť projekt",
             use_container_width=True
         ):
-            st.session_state["active_project"] = selected_project
+            st.session_state[
+                "active_project"
+            ] = selected_project
 
             st.success(
-                f"Projekt '{selected_project}' je vybraný."
+                f"Projekt '{selected_project}' "
+                f"je vybraný. "
+                f"Otvor Detail projektu."
             )
 
     except Exception as e:
@@ -251,244 +341,118 @@ def show_projects():
             f"Chyba pri načítaní projektov: {e}"
         )
 
-def show_project_detail():
-    st.title("📂 Detail projektu")
 
-    try:
-        projects = get_projects()
-
-        if not projects:
-            st.info("Zatiaľ nemáš uložený žiadny projekt.")
-            return
-
-        project_names = [p["name"] for p in projects]
-
-        active_project = st.session_state.get("active_project")
-
-        default_index = 0
-
-        if active_project in project_names:
-            default_index = project_names.index(active_project)
-
-        selected_name = st.selectbox(
-            "Vyber projekt",
-            project_names,
-            index=default_index
-        )
-
-        selected_project = next(
-            p for p in projects
-            if p["name"] == selected_name
-        )
-
-        project_id = selected_project["id"]
-
-        st.markdown("### 📄 Existujúce podklady")
-
-        documents = get_project_documents(project_id)
-
-        if not documents:
-            st.info("K projektu zatiaľ nie sú uložené žiadne dokumenty.")
-        else:
-            for doc in documents:
-                st.write(
-                    f"- {doc['document_type']}: {doc['file_name']}"
-                )
-
-        st.markdown("### ➕ Doplniť podklady")
-
-        document_type = st.selectbox(
-            "Typ dokumentu",
-            [
-                "Technická správa",
-                "Rozpočet",
-                "Výkres",
-                "KSP šablóna / mustra",
-                "Referenčný KSP – kontroly a skúšky",
-                "Iný dokument"
-            ]
-        )
-
-        new_file = st.file_uploader(
-            "Nahraj nový súbor",
-            type=[
-                "pdf",
-                "docx",
-                "doc",
-                "xlsx",
-                "xls",
-                "dwg",
-                "dxf"
-            ]
-        )
-
-        if st.button(
-            "Uložiť nový podklad",
-            use_container_width=True
-        ):
-            if not new_file:
-                st.warning("Najprv vyber súbor.")
-                return
-
-            type_map = {
-                "Technická správa": "technical_report",
-                "Rozpočet": "budget",
-                "Výkres": "drawing",
-                "KSP šablóna / mustra": "ksp_template",
-                "Referenčný KSP – kontroly a skúšky": "reference_ksp",
-                "Iný dokument": "other"
-            }
-
-            upload_project_file(
-                project_id,
-                new_file,
-                type_map[document_type]
-            )
-
-            st.success(
-                f"Súbor '{new_file.name}' bol pridaný k projektu."
-            )
-
-            st.rerun()
-
-        st.markdown("### 🤖 AI analýza projektu")
-
-        instruction = st.text_area(
-            "Čo má AI urobiť?",
-            value=(
-                "Vytvor návrh kontrolného a skúšobného plánu pre tento projekt. "
-                "Vychádzaj z technickej správy, rozpočtu, výkresov a "
-                "referenčného KSP. KSP šablónu používaj ako vzor štruktúry. "
-                "Nevymýšľaj normy ani skúšky, ktoré nie sú podložené dokumentmi. "
-                "Ak niečo nie je možné určiť, označ to ako OVERIŤ."
-            ),
-            height=150
-        )
-
-        if st.button(
-            "Analyzovať projekt pomocou AI",
-            use_container_width=True
-        ):
-            if not documents:
-                st.warning(
-                    "Projekt nemá žiadne podklady na analýzu."
-                )
-                return
-
-            try:
-                with st.spinner(
-                    "Načítavam projektové podklady..."
-                ):
-                    project_text_parts = []
-
-                    for doc in documents:
-                        file_bytes = download_project_file(
-                            doc["file_path"]
-                        )
-
-                        extracted_text = extract_text_from_file(
-                            doc["file_name"],
-                            file_bytes
-                        )
-
-                        project_text_parts.append(
-                            f"""
---- TYP DOKUMENTU: {doc['document_type']} ---
-Súbor: {doc['file_name']}
-
-{extracted_text}
-"""
-                        )
-
-                    project_text = "\n".join(
-                        project_text_parts
-                    )
-
-                with st.spinner(
-                    "AI pripravuje návrh KSP..."
-                ):
-                    result = improve_technical_procedure(
-                        project_text,
-                        instruction
-                    )
-
-                st.session_state["ksp_ai_result"] = result
-
-            except Exception as e:
-                st.error(
-                    f"Chyba pri AI analýze: {e}"
-                )
-
-        if "ksp_ai_result" in st.session_state:
-            st.markdown("### 📋 Návrh KSP")
-
-            st.write(
-                st.session_state["ksp_ai_result"]
-            )
-    
-    except Exception as e:
-        st.error(
-            f"Chyba pri načítaní detailu projektu: {e}"
-        )
-
+# --------------------------------------------------
+# KSP DOKUMENTY
+# --------------------------------------------------
 
 def show_ksp_documents():
     st.title("📑 KSP dokumenty")
 
     st.info(
-        "Tu budú vytvorené KSP a ich jednotlivé verzie."
+        "Tu budú vytvorené KSP "
+        "a ich jednotlivé verzie."
     )
 
 
+# --------------------------------------------------
+# AI ASISTENT
+# --------------------------------------------------
+
 def show_ai_assistant():
-    st.title("🤖 AI asistent pre KSP")
+    st.title(
+        "🤖 AI asistent pre KSP"
+    )
 
     st.write(
-        "Vyber projekt a aplikácia načíta jeho uložené podklady."
+        "Vyber projekt a aplikácia "
+        "načíta jeho uložené podklady."
     )
 
     try:
         projects = get_projects()
 
         if not projects:
-            st.info("Najprv vytvor aspoň jeden projekt.")
-            return
-
-        project_names = [p["name"] for p in projects]
-
-        selected_name = st.selectbox(
-            "Projekt",
-            project_names
-        )
-
-        selected_project = next(
-            p for p in projects
-            if p["name"] == selected_name
-        )
-
-        project_id = selected_project["id"]
-
-        documents = get_project_documents(project_id)
-
-        if not documents:
-            st.warning(
-                "K tomuto projektu zatiaľ nie sú uložené žiadne dokumenty."
+            st.info(
+                "Najprv vytvor aspoň jeden projekt."
             )
             return
 
-        st.markdown("### 📄 Načítané podklady")
+        project_names = [
+            project["name"]
+            for project in projects
+        ]
+
+        active_project = (
+            st.session_state.get(
+                "active_project"
+            )
+        )
+
+        default_index = 0
+
+        if active_project in project_names:
+            default_index = (
+                project_names.index(
+                    active_project
+                )
+            )
+
+        selected_name = st.selectbox(
+            "Projekt",
+            project_names,
+            index=default_index
+        )
+
+        st.session_state[
+            "active_project"
+        ] = selected_name
+
+        selected_project = next(
+            project
+            for project in projects
+            if project["name"] == selected_name
+        )
+
+        project_id = (
+            selected_project["id"]
+        )
+
+        documents = (
+            get_project_documents(
+                project_id
+            )
+        )
+
+        if not documents:
+            st.warning(
+                "K tomuto projektu zatiaľ "
+                "nie sú uložené žiadne dokumenty."
+            )
+            return
+
+        st.markdown(
+            "### 📄 Načítané podklady"
+        )
 
         for doc in documents:
             st.write(
-                f"- {doc['document_type']}: {doc['file_name']}"
+                f"- {doc['document_type']}: "
+                f"{doc['file_name']}"
             )
 
         instruction = st.text_area(
             "Čo má AI urobiť?",
-            height=120,
-            placeholder=(
-                "napr. Navrhni KSP podľa technickej správy, "
-                "rozpočtu a referenčného KSP."
+            height=150,
+            value=(
+                "Vytvor návrh KSP pre tento projekt. "
+                "Referenčný KSP používaj ako záväzný "
+                "zdroj kontrol a skúšok. "
+                "KSP šablónu používaj ako vzor štruktúry. "
+                "Projektové podklady použi na určenie "
+                "konkrétneho rozsahu prác. "
+                "Nič nevymýšľaj. "
+                "Nejasnosti označ ako OVERIŤ."
             )
         )
 
@@ -496,31 +460,30 @@ def show_ai_assistant():
             "Analyzovať projekt pomocou AI",
             use_container_width=True
         ):
-            if not instruction:
-                st.warning(
-                    "Najprv napíš, čo má AI urobiť."
-                )
-                return
 
             with st.spinner(
                 "Načítavam dokumenty projektu..."
             ):
-
                 project_text_parts = []
 
                 for doc in documents:
-                    file_bytes = download_project_file(
-                        doc["file_path"]
+
+                    file_bytes = (
+                        download_project_file(
+                            doc["file_path"]
+                        )
                     )
 
-                    extracted_text = extract_text_from_file(
-                        doc["file_name"],
-                        file_bytes
+                    extracted_text = (
+                        extract_text_from_file(
+                            doc["file_name"],
+                            file_bytes
+                        )
                     )
 
                     project_text_parts.append(
                         f"""
---- {doc['document_type']} ---
+--- TYP DOKUMENTU: {doc['document_type']} ---
 Súbor: {doc['file_name']}
 
 {extracted_text}
@@ -534,13 +497,33 @@ Súbor: {doc['file_name']}
             with st.spinner(
                 "AI analyzuje projektové podklady..."
             ):
-                result = improve_technical_procedure(
-                    project_text,
-                    instruction
+
+                result = (
+                    improve_technical_procedure(
+                        project_text,
+                        instruction
+                    )
                 )
 
-            st.markdown("### Návrh AI")
-            st.write(result)
+            st.session_state[
+                f"ksp_ai_result_{project_id}"
+            ] = result
+
+        result_key = (
+            f"ksp_ai_result_{project_id}"
+        )
+
+        if result_key in st.session_state:
+
+            st.markdown(
+                "### 📋 Návrh KSP"
+            )
+
+            st.write(
+                st.session_state[
+                    result_key
+                ]
+            )
 
     except Exception as e:
         st.error(
