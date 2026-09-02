@@ -148,14 +148,12 @@ def show_project_detail():
                     return
 
                 try:
-                    # Najprv uložíme novú mustru
                     upload_project_file(
                         project_id,
                         replacement_template,
                         "ksp_template"
                     )
 
-                    # Až potom odstránime starú
                     if current_template:
                         delete_project_document(
                             current_template["id"],
@@ -269,8 +267,6 @@ def show_project_detail():
             use_container_width=True
         ):
 
-            # Do kontroly hlavičky zámerne
-            # neposielame mustru ani referenčný KSP.
             header_documents = [
                 doc
                 for doc in documents
@@ -291,6 +287,7 @@ def show_project_detail():
                 with st.spinner(
                     "Načítavam údaje pre hlavičku..."
                 ):
+
                     header_text_parts = []
 
                     for doc in header_documents:
@@ -433,6 +430,7 @@ Súbor: {doc['file_name']}
             with st.spinner(
                 "Načítavam projektové podklady..."
             ):
+
                 project_text_parts = []
 
                 for doc in documents:
@@ -622,6 +620,16 @@ Súbor: {doc['file_name']}
                     )
                     return
 
+                # Hlavička musí byť skontrolovaná
+                if (
+                    metadata_key
+                    not in st.session_state
+                ):
+                    st.warning(
+                        "Najprv skontroluj údaje hlavičky KSP."
+                    )
+                    return
+
                 with st.spinner(
                     "AI pripravuje "
                     "štruktúrované riadky KSP..."
@@ -648,10 +656,25 @@ Súbor: {doc['file_name']}
                         )
                     )
 
+                    # ----------------------------------
+                    # OVERENÉ ÚDAJE Z KROKU 1
+                    # ----------------------------------
+
+                    metadata = (
+                        st.session_state[
+                            metadata_key
+                        ]
+                    )
+
+                    # ----------------------------------
+                    # TVORBA EXCELU
+                    # ----------------------------------
+
                     excel_bytes = (
                         create_ksp_excel(
                             template_bytes,
-                            ksp_rows
+                            ksp_rows,
+                            metadata
                         )
                     )
 
