@@ -351,6 +351,81 @@ def show_project_detail():
 
             st.rerun()
 
+        st.markdown("### 🤖 AI analýza projektu")
+
+        instruction = st.text_area(
+            "Čo má AI urobiť?",
+            value=(
+                "Vytvor návrh kontrolného a skúšobného plánu pre tento projekt. "
+                "Vychádzaj z technickej správy, rozpočtu, výkresov a "
+                "referenčného KSP. KSP šablónu používaj ako vzor štruktúry. "
+                "Nevymýšľaj normy ani skúšky, ktoré nie sú podložené dokumentmi. "
+                "Ak niečo nie je možné určiť, označ to ako OVERIŤ."
+            ),
+            height=150
+        )
+
+        if st.button(
+            "Analyzovať projekt pomocou AI",
+            use_container_width=True
+        ):
+            if not documents:
+                st.warning(
+                    "Projekt nemá žiadne podklady na analýzu."
+                )
+                return
+
+            try:
+                with st.spinner(
+                    "Načítavam projektové podklady..."
+                ):
+                    project_text_parts = []
+
+                    for doc in documents:
+                        file_bytes = download_project_file(
+                            doc["file_path"]
+                        )
+
+                        extracted_text = extract_text_from_file(
+                            doc["file_name"],
+                            file_bytes
+                        )
+
+                        project_text_parts.append(
+                            f"""
+--- TYP DOKUMENTU: {doc['document_type']} ---
+Súbor: {doc['file_name']}
+
+{extracted_text}
+"""
+                        )
+
+                    project_text = "\n".join(
+                        project_text_parts
+                    )
+
+                with st.spinner(
+                    "AI pripravuje návrh KSP..."
+                ):
+                    result = improve_technical_procedure(
+                        project_text,
+                        instruction
+                    )
+
+                st.session_state["ksp_ai_result"] = result
+
+            except Exception as e:
+                st.error(
+                    f"Chyba pri AI analýze: {e}"
+                )
+
+        if "ksp_ai_result" in st.session_state:
+            st.markdown("### 📋 Návrh KSP")
+
+            st.write(
+                st.session_state["ksp_ai_result"]
+            )
+    
     except Exception as e:
         st.error(
             f"Chyba pri načítaní detailu projektu: {e}"
