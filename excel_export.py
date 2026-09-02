@@ -2,11 +2,11 @@ import io
 from copy import copy
 
 from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 
 
 KSP_SHEET_NAME = "KSP_SO 202-300"
 
-# V tvojej šablóne začínajú dátové riadky od riadku 11
 START_ROW = 11
 
 
@@ -29,45 +29,114 @@ COLUMN_MAP = {
 
 def copy_cell_style(source_cell, target_cell):
     """
-    Skopíruje formátovanie zo vzorového riadku šablóny.
+    Skopíruje vzhľad bunky zo šablóny.
     """
+
+    if isinstance(
+        source_cell,
+        MergedCell
+    ):
+        return
+
+    if isinstance(
+        target_cell,
+        MergedCell
+    ):
+        return
 
     if source_cell.has_style:
-        target_cell._style = copy(source_cell._style)
+        target_cell._style = copy(
+            source_cell._style
+        )
 
-    if source_cell.number_format:
-        target_cell.number_format = source_cell.number_format
+    target_cell.font = copy(
+        source_cell.font
+    )
 
-    if source_cell.font:
-        target_cell.font = copy(source_cell.font)
+    target_cell.fill = copy(
+        source_cell.fill
+    )
 
-    if source_cell.fill:
-        target_cell.fill = copy(source_cell.fill)
+    target_cell.border = copy(
+        source_cell.border
+    )
 
-    if source_cell.border:
-        target_cell.border = copy(source_cell.border)
+    target_cell.alignment = copy(
+        source_cell.alignment
+    )
 
-    if source_cell.alignment:
-        target_cell.alignment = copy(source_cell.alignment)
+    target_cell.protection = copy(
+        source_cell.protection
+    )
 
-    if source_cell.protection:
-        target_cell.protection = copy(source_cell.protection)
+    target_cell.number_format = (
+        source_cell.number_format
+    )
 
 
-def clear_existing_ksp_rows(worksheet, start_row):
+def get_real_cell(
+    worksheet,
+    row,
+    column
+):
     """
-    Vymaže starý obsah dátových riadkov,
-    ale ponechá štruktúru a formát šablóny.
+    Ak bunka patrí do zlúčenej oblasti,
+    vráti ľavú hornú bunku tejto oblasti.
+
+    Inak vráti pôvodnú bunku.
     """
 
-    max_row = worksheet.max_row
+    cell = worksheet.cell(
+        row=row,
+        column=column
+    )
 
-    for row in range(start_row, max_row + 1):
+    if not isinstance(
+        cell,
+        MergedCell
+    ):
+        return cell
+
+    for merged_range in worksheet.merged_cells.ranges:
+
+        if cell.coordinate in merged_range:
+
+            return worksheet.cell(
+                row=merged_range.min_row,
+                column=merged_range.min_col
+            )
+
+    return None
+
+
+def clear_existing_ksp_rows(
+    worksheet,
+    start_row
+):
+    """
+    Vymaže pôvodné hodnoty KSP,
+    ale nezasahuje do zlúčených buniek.
+    """
+
+    for row in range(
+        start_row,
+        worksheet.max_row + 1
+    ):
+
         for column in COLUMN_MAP.values():
-            worksheet.cell(
+
+            cell = worksheet.cell(
                 row=row,
                 column=column
-            ).value = None
+            )
+
+            if isinstance(
+                cell,
+                MergedCell
+            ):
+                continue
+
+            cell.value = None
 
 
 def create_ksp_excel(
@@ -75,13 +144,7 @@ def create_ksp_excel(
     ksp_rows
 ):
     """
-    Vytvorí nový KSP Excel podľa nahranej mustry.
-
-    template_bytes:
-        binárny obsah KSP šablóny
-
-    ksp_rows:
-        JSON riadky vytvorené AI
+    Vytvorí KSP Excel podľa pôvodnej mustry.
     """
 
     template_file = io.BytesIO(
@@ -102,10 +165,6 @@ def create_ksp_excel(
         KSP_SHEET_NAME
     ]
 
-    # --------------------------------------------------
-    # VZOROVÝ RIADOK PRE FORMÁTOVANIE
-    # --------------------------------------------------
-
     style_source_row = START_ROW
 
     # --------------------------------------------------
@@ -118,40 +177,42 @@ def create_ksp_excel(
     )
 
     # --------------------------------------------------
-    # ZÁPIS NOVÝCH KSP RIADKOV
+    # ZÁPIS AI RIADKOV
     # --------------------------------------------------
 
     for index, item in enumerate(
         ksp_rows
     ):
+
         target_row = (
             START_ROW + index
         )
 
-        # Ak potrebujeme viac riadkov, než mala šablóna,
-        # vložíme nový riadok.
-        if target_row > worksheet.max_row:
-            worksheet.insert_rows(
-                target_row
+        for (
+            field_name,
+            column_number
+        ) in COLUMN_MAP.items():
+
+            source_cell = get_real_cell(
+                worksheet,
+                style_source_row,
+                column_number
             )
 
-        for field_name, column_number in COLUMN_MAP.items():
-
-            source_cell = worksheet.cell(
-                row=style_source_row,
-                column=column_number
+            target_cell = get_real_cell(
+                worksheet,
+                target_row,
+                column_number
             )
 
-            target_cell = worksheet.cell(
-                row=target_row,
-                column=column_number
-            )
+            if target_cell is None:
+                continue
 
-            # zachovanie vzhľadu šablóny
-            copy_cell_style(
-                source_cell,
-                target_cell
-            )
+            if source_cell is not None:
+                copy_cell_style(
+                    source_cell,
+                    target_cell
+                )
 
             value = item.get(
                 field_name,
@@ -161,7 +222,7 @@ def create_ksp_excel(
             target_cell.value = value
 
     # --------------------------------------------------
-    # ULOŽENIE DO PAMÄTE
+    # ULOŽENIE
     # --------------------------------------------------
 
     output = io.BytesIO()
