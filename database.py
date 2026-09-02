@@ -10,19 +10,36 @@ from uuid import uuid4
 BUCKET_NAME = "project-documents"
 
 
+# --------------------------------------------------
+# SUPABASE CLIENT
+# --------------------------------------------------
+
 def get_supabase_client() -> Client:
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
 
-    return create_client(url, key)
+    return create_client(
+        url,
+        key
+    )
 
+
+# --------------------------------------------------
+# BEZPEČNÝ NÁZOV SÚBORU
+# --------------------------------------------------
 
 def sanitize_filename(filename):
-    normalized = unicodedata.normalize("NFKD", filename)
+    normalized = unicodedata.normalize(
+        "NFKD",
+        filename
+    )
 
     ascii_name = (
         normalized
-        .encode("ascii", "ignore")
+        .encode(
+            "ascii",
+            "ignore"
+        )
         .decode("ascii")
     )
 
@@ -40,6 +57,10 @@ def sanitize_filename(filename):
 
     return safe_name
 
+
+# --------------------------------------------------
+# VYTVORENIE PROJEKTU
+# --------------------------------------------------
 
 def create_project(
     name,
@@ -65,6 +86,10 @@ def create_project(
     return None
 
 
+# --------------------------------------------------
+# NAČÍTANIE PROJEKTOV
+# --------------------------------------------------
+
 def get_projects():
     supabase = get_supabase_client()
 
@@ -81,6 +106,10 @@ def get_projects():
 
     return response.data
 
+
+# --------------------------------------------------
+# NAHRATIE SÚBORU K PROJEKTU
+# --------------------------------------------------
 
 def upload_project_file(
     project_id,
@@ -112,33 +141,29 @@ def upload_project_file(
         else "application/octet-stream"
     )
 
-    # --------------------------------------------------
-    # 1. ULOŽENIE SÚBORU DO SUPABASE STORAGE
-    # --------------------------------------------------
-
     supabase.storage.from_(
         BUCKET_NAME
     ).upload(
         file_path,
         file_bytes,
         {
-            "content-type": content_type
+            "content-type":
+                content_type
         }
     )
 
-    # --------------------------------------------------
-    # 2. ZÁPIS INFORMÁCIE O SÚBORE DO TABUĽKY DOCUMENTS
-    # --------------------------------------------------
-
     document_data = {
-        "project_id": project_id,
-        "document_type": document_type,
+        "project_id":
+            project_id,
 
-        # Pôvodný názov nechávame v databáze
-        "file_name": uploaded_file.name,
+        "document_type":
+            document_type,
 
-        # Upravený názov je iba v Storage ceste
-        "file_path": file_path
+        "file_name":
+            uploaded_file.name,
+
+        "file_path":
+            file_path
     }
 
     response = (
@@ -151,7 +176,13 @@ def upload_project_file(
     return response.data
 
 
-def get_project_documents(project_id):
+# --------------------------------------------------
+# NAČÍTANIE DOKUMENTOV PROJEKTU
+# --------------------------------------------------
+
+def get_project_documents(
+    project_id
+):
     supabase = get_supabase_client()
 
     response = (
@@ -172,7 +203,13 @@ def get_project_documents(project_id):
     return response.data
 
 
-def download_project_file(file_path):
+# --------------------------------------------------
+# STIAHNUTIE SÚBORU
+# --------------------------------------------------
+
+def download_project_file(
+    file_path
+):
     supabase = get_supabase_client()
 
     response = (
@@ -183,3 +220,50 @@ def download_project_file(file_path):
     )
 
     return response
+
+
+# --------------------------------------------------
+# VYMAZANIE DOKUMENTU
+# --------------------------------------------------
+
+def delete_project_document(
+    document_id,
+    file_path
+):
+    """
+    Vymaže dokument zo Storage
+    aj z tabuľky documents.
+    """
+
+    supabase = get_supabase_client()
+
+    # ------------------------------------------
+    # 1. VYMAZANIE SÚBORU ZO STORAGE
+    # ------------------------------------------
+
+    if file_path:
+        (
+            supabase
+            .storage
+            .from_(BUCKET_NAME)
+            .remove(
+                [file_path]
+            )
+        )
+
+    # ------------------------------------------
+    # 2. VYMAZANIE ZÁZNAMU Z DATABÁZY
+    # ------------------------------------------
+
+    response = (
+        supabase
+        .table("documents")
+        .delete()
+        .eq(
+            "id",
+            document_id
+        )
+        .execute()
+    )
+
+    return response.data
