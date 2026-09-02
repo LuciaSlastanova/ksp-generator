@@ -1,6 +1,11 @@
 import streamlit as st
 
-from database import create_project, get_projects
+from database import (
+    create_project,
+    get_projects,
+    upload_project_file
+)
+
 from ai import improve_technical_procedure
 
 
@@ -112,19 +117,21 @@ def show_new_project():
     with col2:
         drawings = st.file_uploader(
             "Výkresy",
-            type=["pdf"],
+            type=["pdf", "dwg", "dxf"],
             accept_multiple_files=True
         )
-        
+
         ksp_template = st.file_uploader(
-           "KSP šablóna / mustra",
-           type=["xlsx", "xls"]
-        )        
+            "KSP šablóna / mustra",
+            type=["xlsx", "xls"]
+        )
 
         reference_ksp = st.file_uploader(
-            "Referenčný KSP",
-            type=["xlsx"]
+            "Referenčný KSP – kontroly a skúšky",
+            type=["xlsx", "xls"]
         )
+
+    st.markdown("### 💾 Uloženie projektu")
 
     if st.button(
         "Vytvoriť projekt",
@@ -135,15 +142,57 @@ def show_new_project():
 
         else:
             try:
-                create_project(project_name)
+                project = create_project(project_name)
+
+                if not project:
+                    st.error("Projekt sa nepodarilo vytvoriť.")
+                    return
+
+                project_id = project["id"]
+
+                if technical_report:
+                    upload_project_file(
+                        project_id,
+                        technical_report,
+                        "technical_report"
+                    )
+
+                if budget:
+                    upload_project_file(
+                        project_id,
+                        budget,
+                        "budget"
+                    )
+
+                if drawings:
+                    for drawing in drawings:
+                        upload_project_file(
+                            project_id,
+                            drawing,
+                            "drawing"
+                        )
+
+                if ksp_template:
+                    upload_project_file(
+                        project_id,
+                        ksp_template,
+                        "ksp_template"
+                    )
+
+                if reference_ksp:
+                    upload_project_file(
+                        project_id,
+                        reference_ksp,
+                        "reference_ksp"
+                    )
 
                 st.success(
-                    f"Projekt '{project_name}' bol uložený do databázy."
+                    f"Projekt '{project_name}' a jeho podklady boli uložené."
                 )
 
             except Exception as e:
                 st.error(
-                    f"Chyba pri ukladaní projektu: {e}"
+                    f"Chyba pri vytváraní projektu: {e}"
                 )
 
 
