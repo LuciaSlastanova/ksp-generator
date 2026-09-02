@@ -202,7 +202,6 @@ def show_new_project():
                     f"Chyba pri vytváraní projektu: {e}"
                 )
 
-
 def show_projects():
     st.title("📁 Moje projekty")
 
@@ -211,23 +210,40 @@ def show_projects():
 
         if not projects:
             st.info("Zatiaľ nemáš uložený žiadny projekt.")
+            return
 
-        else:
-            table_data = []
+        table_data = []
 
-            for project in projects:
-                table_data.append(
-                    {
-                        "Projekt": project["name"],
-                        "Stav": project["status"],
-                        "Vytvorený": project["createds_at"]
-                    }
-                )
+        for project in projects:
+            table_data.append(
+                {
+                    "Projekt": project["name"],
+                    "Stav": project["status"],
+                    "Vytvorený": project["createds_at"]
+                }
+            )
 
-            st.dataframe(
-                table_data,
-                use_container_width=True,
-                hide_index=True
+        st.dataframe(
+            table_data,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        project_names = [p["name"] for p in projects]
+
+        selected_project = st.selectbox(
+            "Vyber projekt",
+            project_names
+        )
+
+        if st.button(
+            "Otvoriť projekt",
+            use_container_width=True
+        ):
+            st.session_state["active_project"] = selected_project
+
+            st.success(
+                f"Projekt '{selected_project}' je vybraný."
             )
 
     except Exception as e:
@@ -247,9 +263,17 @@ def show_project_detail():
 
         project_names = [p["name"] for p in projects]
 
+        active_project = st.session_state.get("active_project")
+
+        default_index = 0
+
+        if active_project in project_names:
+            default_index = project_names.index(active_project)
+
         selected_name = st.selectbox(
             "Vyber projekt",
-            project_names
+            project_names,
+            index=default_index
         )
 
         selected_project = next(
