@@ -115,6 +115,11 @@ def show_new_project():
             type=["pdf"],
             accept_multiple_files=True
         )
+        
+        ksp_template = st.file_uploader(
+           "KSP šablóna / mustra",
+           type=["xlsx", "xls"]
+        )        
 
         reference_ksp = st.file_uploader(
             "Referenčný KSP",
