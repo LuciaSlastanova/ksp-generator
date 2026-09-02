@@ -5,8 +5,6 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 
 
-KSP_SHEET_NAME = "KSP_SO 202-300"
-
 START_ROW = 11
 
 
@@ -28,8 +26,21 @@ COLUMN_MAP = {
 
 
 # --------------------------------------------------
-# POMOCNÉ FUNKCIE PRE ZLÚČENÉ BUNKY
+# POMOCNÉ FUNKCIE
 # --------------------------------------------------
+
+def normalize_text(value):
+    if value is None:
+        return ""
+
+    return (
+        str(value)
+        .strip()
+        .lower()
+        .replace(":", "")
+        .replace("\n", " ")
+    )
+
 
 def get_real_cell(
     worksheet,
@@ -68,10 +79,6 @@ def copy_cell_style(
     source_cell,
     target_cell
 ):
-    """
-    Skopíruje formátovanie bunky.
-    """
-
     if source_cell is None:
         return
 
@@ -121,44 +128,192 @@ def copy_cell_style(
 
 
 # --------------------------------------------------
-# HLAVIČKA KSP
+# AUTOMATICKÉ NÁJDENIE KSP LISTU
 # --------------------------------------------------
 
-def normalize_text(value):
+def find_ksp_worksheet(workbook):
     """
-    Pomocná funkcia na porovnávanie názvov buniek.
+    Nájde KSP list podľa obsahu,
+    nie podľa názvu listu.
     """
 
-    if value is None:
-        return ""
+    required_markers = [
+        "názov subprocesu",
+        "druh skúšky/kontroly",
+        "spôsob kontroly",
+        "početnosť"
+    ]
 
-    return (
-        str(value)
-        .strip()
-        .lower()
-        .replace(":", "")
-    )
+    best_sheet = None
+    best_score = 0
 
+    for worksheet in workbook.worksheets:
+
+        sheet_text_parts = []
+
+        max_row = min(
+            worksheet.max_row,
+            25
+        )
+
+        max_column = min(
+            worksheet.max_column,
+            20
+        )
+
+        for row in range(
+            1,
+            max_row + 1
+        ):
+            for column in range(
+                1,
+                max_column + 1
+            ):
+
+                cell = worksheet.cell(
+                    row=row,
+                    column=column
+                )
+
+                if isinstance(
+                    cell,
+                    MergedCell
+                ):
+                    continue
+
+                text = normalize_text(
+                    cell.value
+                )
+
+                if text:
+                    sheet_text_parts.append(
+                        text
+                    )
+
+        sheet_text = " ".join(
+            sheet_text_parts
+        )
+
+        score = 0
+
+        for marker in required_markers:
+            if marker in sheet_text:
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            best_sheet = worksheet
+
+    # Chceme aspoň 3 rozpoznané znaky KSP tabuľky
+    if (
+        best_sheet is None
+        or best_score < 3
+    ):
+        raise ValueError(
+            "Nepodarilo sa automaticky nájsť "
+            "list s KSP tabuľkou."
+        )
+
+    return best_sheet
+
+
+# --------------------------------------------------
+# AUTOMATICKÉ NÁJDENIE TITULNÉHO LISTU
+# --------------------------------------------------
+
+def find_title_worksheet(workbook):
+    """
+    Nájde titulný list podľa údajov ako
+    Názov stavby, Objednávateľ, Zhotoviteľ.
+    """
+
+    markers = [
+        "názov stavby",
+        "objednávateľ",
+        "zhotoviteľ"
+    ]
+
+    best_sheet = None
+    best_score = 0
+
+    for worksheet in workbook.worksheets:
+
+        sheet_text_parts = []
+
+        max_row = min(
+            worksheet.max_row,
+            40
+        )
+
+        max_column = min(
+            worksheet.max_column,
+            15
+        )
+
+        for row in range(
+            1,
+            max_row + 1
+        ):
+            for column in range(
+                1,
+                max_column + 1
+            ):
+
+                cell = worksheet.cell(
+                    row=row,
+                    column=column
+                )
+
+                if isinstance(
+                    cell,
+                    MergedCell
+                ):
+                    continue
+
+                text = normalize_text(
+                    cell.value
+                )
+
+                if text:
+                    sheet_text_parts.append(
+                        text
+                    )
+
+        sheet_text = " ".join(
+            sheet_text_parts
+        )
+
+        score = 0
+
+        for marker in markers:
+            if marker in sheet_text:
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            best_sheet = worksheet
+
+    if best_score >= 2:
+        return best_sheet
+
+    return None
+
+
+# --------------------------------------------------
+# HLAVIČKA
+# --------------------------------------------------
 
 def find_label_cell(
     worksheet,
     possible_labels
 ):
-    """
-    Nájde v hornej časti KSP bunku,
-    ktorá obsahuje napr. Stavba, Objekt,
-    Zhotoviteľ alebo Objednávateľ.
-    """
-
     normalized_labels = [
         normalize_text(label)
         for label in possible_labels
     ]
 
-    # Hlavičku hľadáme iba hore,
-    # aby sme náhodou nemenili údaje v tabuľke KSP.
     max_search_row = min(
-        30,
+        40,
         worksheet.max_row
     )
 
@@ -209,21 +364,14 @@ def find_value_cell_next_to_label(
     worksheet,
     label_cell
 ):
-    """
-    Nájde vhodnú bunku napravo od názvu položky.
-
-    Napríklad:
-    A4 = Stavba:
-    B4 = názov stavby
-    """
-
     if label_cell is None:
         return None
 
     row = label_cell.row
-    start_column = label_cell.column + 1
+    start_column = (
+        label_cell.column + 1
+    )
 
-    # Hľadáme najbližšiu zapisovateľnú bunku napravo.
     for column in range(
         start_column,
         min(
@@ -241,8 +389,10 @@ def find_value_cell_next_to_label(
         if real_cell is None:
             continue
 
-        # Nesmie to byť tá istá bunka ako label
-        if real_cell.coordinate == label_cell.coordinate:
+        if (
+            real_cell.coordinate
+            == label_cell.coordinate
+        ):
             continue
 
         return real_cell
@@ -255,11 +405,6 @@ def write_header_value(
     labels,
     value
 ):
-    """
-    Nájde položku hlavičky podľa názvu
-    a zapíše novú hodnotu vedľa nej.
-    """
-
     if not value:
         return False
 
@@ -274,9 +419,11 @@ def write_header_value(
     if label_cell is None:
         return False
 
-    value_cell = find_value_cell_next_to_label(
-        worksheet,
-        label_cell
+    value_cell = (
+        find_value_cell_next_to_label(
+            worksheet,
+            label_cell
+        )
     )
 
     if value_cell is None:
@@ -292,8 +439,7 @@ def update_project_header(
     metadata
 ):
     """
-    Prepíše údaje starej stavby v mustre
-    údajmi, ktoré boli overené v kroku 1.
+    Prepíše údaje projektu na danom liste.
     """
 
     if not metadata:
@@ -308,6 +454,13 @@ def update_project_header(
 
     objekt = metadata.get(
         "objekt",
+        {}
+    ).get(
+        "value"
+    )
+
+    cast = metadata.get(
+        "cast",
         {}
     ).get(
         "value"
@@ -331,7 +484,8 @@ def update_project_header(
         worksheet,
         [
             "Stavba",
-            "Názov stavby"
+            "Názov stavby",
+            "Názov stavby / Építkezés neve"
         ],
         stavba
     )
@@ -341,9 +495,18 @@ def update_project_header(
         [
             "Objekt",
             "Stavebný objekt",
-            "SO"
+            "Číslo a názov objektu"
         ],
         objekt
+    )
+
+    write_header_value(
+        worksheet,
+        [
+            "Časť",
+            "Časť stavby"
+        ],
+        cast
     )
 
     write_header_value(
@@ -359,6 +522,7 @@ def update_project_header(
         worksheet,
         [
             "Objednávateľ",
+            "Objednávateľ 1",
             "Investor",
             "Stavebník"
         ],
@@ -367,18 +531,13 @@ def update_project_header(
 
 
 # --------------------------------------------------
-# PÔVODNÝ OBSAH KSP
+# VYČISTENIE PÔVODNÝCH KSP RIADKOV
 # --------------------------------------------------
 
 def clear_existing_ksp_rows(
     worksheet,
     start_row
 ):
-    """
-    Vymaže pôvodné hodnoty dátových riadkov KSP,
-    ale zachová štruktúru a formátovanie.
-    """
-
     for row in range(
         start_row,
         worksheet.max_row + 1
@@ -401,7 +560,7 @@ def clear_existing_ksp_rows(
 
 
 # --------------------------------------------------
-# TVORBA VÝSLEDNÉHO KSP
+# TVORBA VÝSLEDNÉHO EXCELU
 # --------------------------------------------------
 
 def create_ksp_excel(
@@ -410,18 +569,10 @@ def create_ksp_excel(
     metadata=None
 ):
     """
-    Vytvorí nový KSP Excel.
+    Vytvorí výsledný KSP.
 
-    template_bytes:
-        vybraná KSP mustra
-
-    ksp_rows:
-        riadky KSP vytvorené AI
-
-    metadata:
-        overené údaje z kroku 1:
-        stavba, objekt, zhotoviteľ,
-        objednávateľ
+    Názvy listov môžu byť ľubovoľné.
+    KSP aj titulný list sa hľadajú podľa obsahu.
     """
 
     template_file = io.BytesIO(
@@ -432,38 +583,65 @@ def create_ksp_excel(
         template_file
     )
 
-    if KSP_SHEET_NAME not in workbook.sheetnames:
-        raise ValueError(
-            f"V šablóne sa nenašiel list "
-            f"'{KSP_SHEET_NAME}'."
-        )
+    # --------------------------------------------------
+    # AUTOMATICKY NÁJDEME KSP LIST
+    # --------------------------------------------------
 
-    worksheet = workbook[
-        KSP_SHEET_NAME
-    ]
+    ksp_worksheet = (
+        find_ksp_worksheet(
+            workbook
+        )
+    )
 
     # --------------------------------------------------
-    # PREPÍSANIE HLAVIČKY
+    # AUTOMATICKY NÁJDEME TITULNÝ LIST
+    # --------------------------------------------------
+
+    title_worksheet = (
+        find_title_worksheet(
+            workbook
+        )
+    )
+
+    # --------------------------------------------------
+    # PREPÍSANIE HLAVIČKY KSP LISTU
     # --------------------------------------------------
 
     update_project_header(
-        worksheet,
+        ksp_worksheet,
         metadata
     )
 
     # --------------------------------------------------
-    # VYČISTENIE STARÝCH RIADKOV
+    # PREPÍSANIE TITULNÉHO LISTU
     # --------------------------------------------------
 
-    style_source_row = START_ROW
+    if (
+        title_worksheet is not None
+        and title_worksheet
+        is not ksp_worksheet
+    ):
+
+        update_project_header(
+            title_worksheet,
+            metadata
+        )
+
+    # --------------------------------------------------
+    # VYČISTENIE STARÝCH KSP RIADKOV
+    # --------------------------------------------------
+
+    style_source_row = (
+        START_ROW
+    )
 
     clear_existing_ksp_rows(
-        worksheet,
+        ksp_worksheet,
         START_ROW
     )
 
     # --------------------------------------------------
-    # ZÁPIS NOVÝCH KSP RIADKOV
+    # ZÁPIS NOVÝCH RIADKOV
     # --------------------------------------------------
 
     for index, item in enumerate(
@@ -480,13 +658,13 @@ def create_ksp_excel(
         ) in COLUMN_MAP.items():
 
             source_cell = get_real_cell(
-                worksheet,
+                ksp_worksheet,
                 style_source_row,
                 column_number
             )
 
             target_cell = get_real_cell(
-                worksheet,
+                ksp_worksheet,
                 target_row,
                 column_number
             )
@@ -495,14 +673,17 @@ def create_ksp_excel(
                 continue
 
             if source_cell is not None:
+
                 copy_cell_style(
                     source_cell,
                     target_cell
                 )
 
-            target_cell.value = item.get(
-                field_name,
-                ""
+            target_cell.value = (
+                item.get(
+                    field_name,
+                    ""
+                )
             )
 
     # --------------------------------------------------
