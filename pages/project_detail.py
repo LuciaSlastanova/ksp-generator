@@ -329,8 +329,8 @@ def show_project_detail():
                 selected_document_type
             )
 
-            # Ak sme zmenili podklady,
-            # stará kontrola a Excel už nemusia platiť.
+            # Po zmene podkladov staré údaje
+            # hlavičky nemusia byť aktuálne.
             if selected_document_type in [
                 "technical_report",
                 "budget"
@@ -340,6 +340,19 @@ def show_project_detail():
                     metadata_key,
                     None
                 )
+
+                for field in [
+                    "stavba",
+                    "objekt",
+                    "cast",
+                    "zhotovitel",
+                    "objednavatel"
+                ]:
+
+                    st.session_state.pop(
+                        f"header_{field}_{project_id}",
+                        None
+                    )
 
             st.session_state.pop(
                 excel_key,
@@ -362,9 +375,9 @@ def show_project_detail():
         )
 
         st.caption(
-            "Kontrolujú sa základné údaje projektu. "
-            "Používa sa technická správa "
-            "a rozpočet / cenová ponuka."
+            "AI navrhne údaje podľa podkladov. "
+            "Pred vytvorením Excelu ich môžeš "
+            "ľubovoľne opraviť."
         )
 
         if st.button(
@@ -411,9 +424,34 @@ def show_project_detail():
                     metadata_key
                 ] = metadata
 
-        # --------------------------------------------------
-        # ZOBRAZENIE HLAVIČKY
-        # --------------------------------------------------
+                # ------------------------------------------
+                # AI HODNOTY PREDVYPLNÍME DO EDITOVATEĽNÝCH POLÍ
+                # ------------------------------------------
+
+                for field in [
+                    "stavba",
+                    "objekt",
+                    "cast",
+                    "zhotovitel",
+                    "objednavatel"
+                ]:
+
+                    value = (
+                        metadata
+                        .get(field, {})
+                        .get(
+                            "value",
+                            "OVERIŤ"
+                        )
+                    )
+
+                    st.session_state[
+                        f"header_{field}_{project_id}"
+                    ] = value
+
+        # ==================================================
+        # EDITOVATEĽNÁ HLAVIČKA
+        # ==================================================
 
         if metadata_key in st.session_state:
 
@@ -424,64 +462,119 @@ def show_project_detail():
             )
 
             st.markdown(
-                "#### Nájdené údaje"
+                "#### ✏️ Údaje, ktoré sa zapíšu do Excelu"
             )
 
-            metadata_fields = [
+            st.info(
+                "Ak je niečo označené OVERIŤ "
+                "alebo je údaj nesprávny, "
+                "prepíš ho priamo v poli."
+            )
 
-                (
-                    "stavba",
-                    "Stavba"
-                ),
+            # ------------------------------------------
+            # STAVBA
+            # ------------------------------------------
 
-                (
-                    "objekt",
-                    "Objekt / SO"
-                ),
+            stavba_info = metadata.get(
+                "stavba",
+                {}
+            )
 
-                (
-                    "cast",
-                    "Časť"
-                ),
+            st.caption(
+                f"AI kontrola: "
+                f"{stavba_info.get('status', 'OVERIŤ')} | "
+                f"Zdroj: "
+                f"{stavba_info.get('source', 'nenájdené')}"
+            )
 
-                (
-                    "zhotovitel",
-                    "Zhotoviteľ"
-                ),
+            st.text_input(
+                "Stavba",
+                key=f"header_stavba_{project_id}"
+            )
 
-                (
-                    "objednavatel",
-                    "Objednávateľ / investor"
-                )
-            ]
+            # ------------------------------------------
+            # OBJEKT
+            # ------------------------------------------
 
-            for field, label in metadata_fields:
+            objekt_info = metadata.get(
+                "objekt",
+                {}
+            )
 
-                item = metadata.get(
-                    field,
-                    {}
-                )
+            st.caption(
+                f"AI kontrola: "
+                f"{objekt_info.get('status', 'OVERIŤ')} | "
+                f"Zdroj: "
+                f"{objekt_info.get('source', 'nenájdené')}"
+            )
 
-                value = item.get(
-                    "value",
-                    "OVERIŤ"
-                )
+            st.text_input(
+                "Objekt / SO",
+                key=f"header_objekt_{project_id}"
+            )
 
-                status = item.get(
-                    "status",
-                    "OVERIŤ"
-                )
+            # ------------------------------------------
+            # ČASŤ
+            # ------------------------------------------
 
-                source = item.get(
-                    "source",
-                    "nenájdené"
-                )
+            cast_info = metadata.get(
+                "cast",
+                {}
+            )
 
-                st.write(
-                    f"**{label}:** {value}  \n"
-                    f"Kontrola: `{status}`  \n"
-                    f"Zdroj: `{source}`"
-                )
+            st.caption(
+                f"AI kontrola: "
+                f"{cast_info.get('status', 'OVERIŤ')} | "
+                f"Zdroj: "
+                f"{cast_info.get('source', 'nenájdené')}"
+            )
+
+            st.text_input(
+                "Časť",
+                key=f"header_cast_{project_id}"
+            )
+
+            # ------------------------------------------
+            # ZHOTOVITEĽ
+            # ------------------------------------------
+
+            zhotovitel_info = metadata.get(
+                "zhotovitel",
+                {}
+            )
+
+            st.caption(
+                f"AI kontrola: "
+                f"{zhotovitel_info.get('status', 'OVERIŤ')} | "
+                f"Zdroj: "
+                f"{zhotovitel_info.get('source', 'nenájdené')}"
+            )
+
+            st.text_input(
+                "Zhotoviteľ",
+                key=f"header_zhotovitel_{project_id}"
+            )
+
+            # ------------------------------------------
+            # OBJEDNÁVATEĽ
+            # ------------------------------------------
+
+            objednavatel_info = metadata.get(
+                "objednavatel",
+                {}
+            )
+
+            st.caption(
+                f"AI kontrola: "
+                f"{objednavatel_info.get('status', 'OVERIŤ')} | "
+                f"Zdroj: "
+                f"{objednavatel_info.get('source', 'nenájdené')}"
+            )
+
+            st.text_input(
+                "Objednávateľ / investor",
+                key=f"header_objednavatel_{project_id}"
+            )
 
         # ==================================================
         # 2. GENEROVANIE KSP EXCEL
@@ -491,20 +584,12 @@ def show_project_detail():
             "### 2️⃣ 📥 Vygenerovať KSP Excel"
         )
 
-        # --------------------------------------------------
-        # KSP MUSTRA
-        # --------------------------------------------------
-
         ksp_templates = [
             doc
             for doc in documents
             if doc["document_type"]
             == "ksp_template"
         ]
-
-        # --------------------------------------------------
-        # REFERENČNÉ KSP
-        # --------------------------------------------------
 
         reference_ksps = [
             doc
@@ -587,7 +672,7 @@ def show_project_detail():
             )
 
             # ------------------------------------------
-            # POKYNY POUŽÍVATEĽA
+            # POKYNY PRE KSP
             # ------------------------------------------
 
             generation_instruction = (
@@ -627,7 +712,6 @@ def show_project_detail():
                 use_container_width=True
             ):
 
-                # Najprv musí byť skontrolovaná hlavička
                 if (
                     metadata_key
                     not in st.session_state
@@ -639,6 +723,47 @@ def show_project_detail():
                     )
 
                     return
+
+                # --------------------------------------
+                # FINÁLNA HLAVIČKA PODĽA EDITOVANÝCH POLÍ
+                # --------------------------------------
+
+                final_metadata = {
+                    "stavba": {
+                        "value": st.session_state.get(
+                            f"header_stavba_{project_id}",
+                            ""
+                        )
+                    },
+
+                    "objekt": {
+                        "value": st.session_state.get(
+                            f"header_objekt_{project_id}",
+                            ""
+                        )
+                    },
+
+                    "cast": {
+                        "value": st.session_state.get(
+                            f"header_cast_{project_id}",
+                            ""
+                        )
+                    },
+
+                    "zhotovitel": {
+                        "value": st.session_state.get(
+                            f"header_zhotovitel_{project_id}",
+                            ""
+                        )
+                    },
+
+                    "objednavatel": {
+                        "value": st.session_state.get(
+                            f"header_objednavatel_{project_id}",
+                            ""
+                        )
+                    }
+                }
 
                 # --------------------------------------
                 # PROJEKTOVÉ PODKLADY PRE AI
@@ -656,8 +781,6 @@ def show_project_detail():
                     ]
                 ]
 
-                # Vybraný referenčný KSP pridáme
-                # samostatne.
                 ai_documents = (
                     project_documents
                     + [
@@ -675,8 +798,6 @@ def show_project_detail():
                         )
                     )
 
-                    # Pokyn používateľa ide
-                    # do toho istého AI volania.
                     project_text += (
                         "\n\n"
                         "=================================\n"
@@ -686,7 +807,7 @@ def show_project_detail():
                     )
 
                 # --------------------------------------
-                # JEDINÉ HLAVNÉ AI VOLANIE
+                # HLAVNÉ AI VOLANIE
                 # --------------------------------------
 
                 with st.spinner(
@@ -715,17 +836,11 @@ def show_project_detail():
                         )
                     )
 
-                    metadata = (
-                        st.session_state[
-                            metadata_key
-                        ]
-                    )
-
                     excel_bytes = (
                         create_ksp_excel(
                             template_bytes,
                             ksp_rows,
-                            metadata
+                            final_metadata
                         )
                     )
 
