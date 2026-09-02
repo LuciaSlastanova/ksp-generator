@@ -1,236 +1,482 @@
-import io
-from copy import copy
+import streamlit as st
 
-from openpyxl import load_workbook
-from openpyxl.cell.cell import MergedCell
+from database import (
+    get_projects,
+    get_project_documents,
+    upload_project_file,
+    download_project_file
+)
 
+from file_processing import extract_text_from_file
 
-KSP_SHEET_NAME = "KSP_SO 202-300"
+from ai import (
+    improve_technical_procedure,
+    generate_ksp_rows
+)
 
-START_ROW = 11
-
-
-COLUMN_MAP = {
-    "poradie": 1,            # A
-    "subproces": 2,          # B
-    "mnozstvo": 4,           # D
-    "druh_kontroly": 5,      # E
-    "sposob_kontroly": 6,    # F
-    "kriterium": 7,          # G
-    "pocetnost": 8,          # H
-    "celkovy_pocet": 9,      # I
-    "zodpoveda": 10,         # J
-    "vykona": 11,            # K
-    "tolerancia": 12,        # L
-    "dokumentovanie": 13,    # M
-    "poznamka": 14           # N
-}
+from excel_export import create_ksp_excel
 
 
-def copy_cell_style(source_cell, target_cell):
-    """
-    Skopíruje vzhľad bunky zo šablóny.
-    """
+def show_project_detail():
+    st.title("📂 Detail projektu")
 
-    if isinstance(
-        source_cell,
-        MergedCell
-    ):
-        return
+    try:
+        projects = get_projects()
 
-    if isinstance(
-        target_cell,
-        MergedCell
-    ):
-        return
+        if not projects:
+            st.info("Zatiaľ nemáš uložený žiadny projekt.")
+            return
 
-    if source_cell.has_style:
-        target_cell._style = copy(
-            source_cell._style
+        # --------------------------------------------------
+        # VÝBER PROJEKTU
+        # --------------------------------------------------
+
+        project_names = [
+            project["name"]
+            for project in projects
+        ]
+
+        active_project = st.session_state.get(
+            "active_project"
         )
 
-    target_cell.font = copy(
-        source_cell.font
-    )
+        default_index = 0
 
-    target_cell.fill = copy(
-        source_cell.fill
-    )
-
-    target_cell.border = copy(
-        source_cell.border
-    )
-
-    target_cell.alignment = copy(
-        source_cell.alignment
-    )
-
-    target_cell.protection = copy(
-        source_cell.protection
-    )
-
-    target_cell.number_format = (
-        source_cell.number_format
-    )
-
-
-def get_real_cell(
-    worksheet,
-    row,
-    column
-):
-    """
-    Ak bunka patrí do zlúčenej oblasti,
-    vráti ľavú hornú bunku tejto oblasti.
-
-    Inak vráti pôvodnú bunku.
-    """
-
-    cell = worksheet.cell(
-        row=row,
-        column=column
-    )
-
-    if not isinstance(
-        cell,
-        MergedCell
-    ):
-        return cell
-
-    for merged_range in worksheet.merged_cells.ranges:
-
-        if cell.coordinate in merged_range:
-
-            return worksheet.cell(
-                row=merged_range.min_row,
-                column=merged_range.min_col
+        if active_project in project_names:
+            default_index = project_names.index(
+                active_project
             )
 
-    return None
-
-
-def clear_existing_ksp_rows(
-    worksheet,
-    start_row
-):
-    """
-    Vymaže pôvodné hodnoty KSP,
-    ale nezasahuje do zlúčených buniek.
-    """
-
-    for row in range(
-        start_row,
-        worksheet.max_row + 1
-    ):
-
-        for column in COLUMN_MAP.values():
-
-            cell = worksheet.cell(
-                row=row,
-                column=column
-            )
-
-            if isinstance(
-                cell,
-                MergedCell
-            ):
-                continue
-
-            cell.value = None
-
-
-def create_ksp_excel(
-    template_bytes,
-    ksp_rows
-):
-    """
-    Vytvorí KSP Excel podľa pôvodnej mustry.
-    """
-
-    template_file = io.BytesIO(
-        template_bytes
-    )
-
-    workbook = load_workbook(
-        template_file
-    )
-
-    if KSP_SHEET_NAME not in workbook.sheetnames:
-        raise ValueError(
-            f"V šablóne sa nenašiel list "
-            f"'{KSP_SHEET_NAME}'."
+        selected_name = st.selectbox(
+            "Vyber projekt",
+            project_names,
+            index=default_index
         )
 
-    worksheet = workbook[
-        KSP_SHEET_NAME
-    ]
+        st.session_state[
+            "active_project"
+        ] = selected_name
 
-    style_source_row = START_ROW
-
-    # --------------------------------------------------
-    # VYČISTENIE STARÉHO OBSAHU
-    # --------------------------------------------------
-
-    clear_existing_ksp_rows(
-        worksheet,
-        START_ROW
-    )
-
-    # --------------------------------------------------
-    # ZÁPIS AI RIADKOV
-    # --------------------------------------------------
-
-    for index, item in enumerate(
-        ksp_rows
-    ):
-
-        target_row = (
-            START_ROW + index
+        selected_project = next(
+            project
+            for project in projects
+            if project["name"] == selected_name
         )
 
-        for (
-            field_name,
-            column_number
-        ) in COLUMN_MAP.items():
+        project_id = selected_project["id"]
 
-            source_cell = get_real_cell(
-                worksheet,
-                style_source_row,
-                column_number
+        # --------------------------------------------------
+        # EXISTUJÚCE PODKLADY
+        # --------------------------------------------------
+
+        st.markdown(
+            "### 📄 Existujúce podklady"
+        )
+
+        documents = get_project_documents(
+            project_id
+        )
+
+        if not documents:
+            st.info(
+                "K projektu zatiaľ nie sú uložené žiadne dokumenty."
             )
-
-            target_cell = get_real_cell(
-                worksheet,
-                target_row,
-                column_number
-            )
-
-            if target_cell is None:
-                continue
-
-            if source_cell is not None:
-                copy_cell_style(
-                    source_cell,
-                    target_cell
+        else:
+            for doc in documents:
+                st.write(
+                    f"- {doc['document_type']}: "
+                    f"{doc['file_name']}"
                 )
 
-            value = item.get(
-                field_name,
-                ""
+        # --------------------------------------------------
+        # DOPLNENIE PODKLADOV
+        # --------------------------------------------------
+
+        st.markdown(
+            "### ➕ Doplniť podklady"
+        )
+
+        document_type = st.selectbox(
+            "Typ dokumentu",
+            [
+                "Technická správa",
+                "Rozpočet",
+                "Výkres",
+                "KSP šablóna / mustra",
+                "Referenčný KSP – kontroly a skúšky",
+                "Iný dokument"
+            ]
+        )
+
+        new_file = st.file_uploader(
+            "Nahraj nový súbor",
+            type=[
+                "pdf",
+                "docx",
+                "doc",
+                "xlsx",
+                "xls",
+                "dwg",
+                "dxf"
+            ]
+        )
+
+        if st.button(
+            "Uložiť nový podklad",
+            use_container_width=True
+        ):
+            if not new_file:
+                st.warning(
+                    "Najprv vyber súbor."
+                )
+                return
+
+            type_map = {
+                "Technická správa":
+                    "technical_report",
+
+                "Rozpočet":
+                    "budget",
+
+                "Výkres":
+                    "drawing",
+
+                "KSP šablóna / mustra":
+                    "ksp_template",
+
+                "Referenčný KSP – kontroly a skúšky":
+                    "reference_ksp",
+
+                "Iný dokument":
+                    "other"
+            }
+
+            upload_project_file(
+                project_id,
+                new_file,
+                type_map[document_type]
             )
 
-            target_cell.value = value
+            st.success(
+                f"Súbor '{new_file.name}' "
+                f"bol pridaný k projektu."
+            )
 
-    # --------------------------------------------------
-    # ULOŽENIE
-    # --------------------------------------------------
+            st.rerun()
 
-    output = io.BytesIO()
+        # --------------------------------------------------
+        # AI ANALÝZA
+        # --------------------------------------------------
 
-    workbook.save(
-        output
-    )
+        st.markdown(
+            "### 🤖 AI analýza projektu"
+        )
 
-    output.seek(0)
+        instruction = st.text_area(
+            "Čo má AI urobiť?",
+            value=(
+                "Vytvor návrh kontrolného a skúšobného "
+                "plánu pre tento projekt. "
+                "Referenčný KSP používaj ako záväzný "
+                "zdroj kontrol a skúšok. "
+                "KSP šablónu / mustru používaj iba ako "
+                "vzor štruktúry výsledného dokumentu. "
+                "Technickú správu, rozpočet a výkresy "
+                "použi na určenie konkrétneho rozsahu prác. "
+                "Nevymýšľaj nové skúšky, kontroly ani normy. "
+                "Ak niečo nie je možné jednoznačne určiť, "
+                "označ to ako OVERIŤ."
+            ),
+            height=170
+        )
 
-    return output.getvalue()
+        if st.button(
+            "Analyzovať projekt pomocou AI",
+            use_container_width=True
+        ):
+            if not documents:
+                st.warning(
+                    "Projekt nemá žiadne podklady na analýzu."
+                )
+                return
+
+            with st.spinner(
+                "Načítavam projektové podklady..."
+            ):
+                project_text_parts = []
+
+                for doc in documents:
+
+                    file_bytes = (
+                        download_project_file(
+                            doc["file_path"]
+                        )
+                    )
+
+                    extracted_text = (
+                        extract_text_from_file(
+                            doc["file_name"],
+                            file_bytes
+                        )
+                    )
+
+                    project_text_parts.append(
+                        f"""
+--- TYP DOKUMENTU: {doc['document_type']} ---
+Súbor: {doc['file_name']}
+
+{extracted_text}
+"""
+                    )
+
+                project_text = "\n".join(
+                    project_text_parts
+                )
+
+            with st.spinner(
+                "AI pripravuje návrh KSP..."
+            ):
+                result = (
+                    improve_technical_procedure(
+                        project_text,
+                        instruction
+                    )
+                )
+
+            st.session_state[
+                f"ksp_ai_result_{project_id}"
+            ] = result
+
+            st.session_state[
+                f"project_text_{project_id}"
+            ] = project_text
+
+        # --------------------------------------------------
+        # ZOBRAZENIE AI VÝSLEDKU
+        # --------------------------------------------------
+
+        result_key = (
+            f"ksp_ai_result_{project_id}"
+        )
+
+        if result_key in st.session_state:
+
+            st.markdown(
+                "### 📋 Návrh KSP"
+            )
+
+            st.write(
+                st.session_state[
+                    result_key
+                ]
+            )
+
+        # --------------------------------------------------
+        # GENEROVANIE EXCELU
+        # --------------------------------------------------
+
+        st.markdown(
+            "### 📥 Vygenerovať KSP Excel"
+        )
+
+        # Samostatne nájdeme všetky mustry
+        ksp_templates = [
+            doc
+            for doc in documents
+            if doc["document_type"]
+            == "ksp_template"
+        ]
+
+        # Samostatne nájdeme všetky referenčné KSP
+        reference_ksps = [
+            doc
+            for doc in documents
+            if doc["document_type"]
+            == "reference_ksp"
+        ]
+
+        if not ksp_templates:
+            st.warning(
+                "Projekt nemá nahranú "
+                "KSP šablónu / mustru."
+            )
+
+        if not reference_ksps:
+            st.warning(
+                "Projekt nemá nahraný "
+                "referenčný KSP."
+            )
+
+        if (
+            ksp_templates
+            and reference_ksps
+        ):
+
+            # ------------------------------------------
+            # VÝBER PRESNEJ MUSTRA
+            # ------------------------------------------
+
+            template_names = [
+                doc["file_name"]
+                for doc in ksp_templates
+            ]
+
+            selected_template_name = (
+                st.selectbox(
+                    "KSP šablóna / MUSTRA výsledného Excelu",
+                    template_names,
+                    index=len(
+                        template_names
+                    ) - 1
+                )
+            )
+
+            selected_template = next(
+                doc
+                for doc in ksp_templates
+                if doc["file_name"]
+                == selected_template_name
+            )
+
+            # ------------------------------------------
+            # VÝBER REFERENČNÉHO KSP
+            # ------------------------------------------
+
+            reference_names = [
+                doc["file_name"]
+                for doc in reference_ksps
+            ]
+
+            selected_reference_name = (
+                st.selectbox(
+                    "Referenčný KSP – zdroj kontrol a skúšok",
+                    reference_names,
+                    index=len(
+                        reference_names
+                    ) - 1
+                )
+            )
+
+            selected_reference = next(
+                doc
+                for doc in reference_ksps
+                if doc["file_name"]
+                == selected_reference_name
+            )
+
+            # ------------------------------------------
+            # UKÁŽEME, ČO IDEME POUŽIŤ
+            # ------------------------------------------
+
+            st.info(
+                f"Výsledný Excel bude vytvorený z mustry: "
+                f"**{selected_template['file_name']}**\n\n"
+                f"Kontroly a skúšky budú vychádzať z: "
+                f"**{selected_reference['file_name']}**"
+            )
+
+            # ------------------------------------------
+            # GENEROVANIE
+            # ------------------------------------------
+
+            if st.button(
+                "Vygenerovať KSP Excel",
+                use_container_width=True
+            ):
+
+                project_text_key = (
+                    f"project_text_{project_id}"
+                )
+
+                if (
+                    project_text_key
+                    not in st.session_state
+                ):
+                    st.warning(
+                        "Najprv spusti AI analýzu projektu."
+                    )
+                    return
+
+                with st.spinner(
+                    "AI pripravuje "
+                    "štruktúrované riadky KSP..."
+                ):
+                    ksp_rows = (
+                        generate_ksp_rows(
+                            st.session_state[
+                                project_text_key
+                            ]
+                        )
+                    )
+
+                with st.spinner(
+                    "Vytváram Excel podľa "
+                    "vybranej KSP mustry..."
+                ):
+
+                    # DÔLEŽITÉ:
+                    # Excel sa vytvára výhradne
+                    # z vybratej MUSTRA.
+                    template_bytes = (
+                        download_project_file(
+                            selected_template[
+                                "file_path"
+                            ]
+                        )
+                    )
+
+                    excel_bytes = (
+                        create_ksp_excel(
+                            template_bytes,
+                            ksp_rows
+                        )
+                    )
+
+                st.session_state[
+                    f"ksp_excel_{project_id}"
+                ] = excel_bytes
+
+                st.session_state[
+                    f"ksp_rows_{project_id}"
+                ] = ksp_rows
+
+                st.success(
+                    "KSP Excel bol vytvorený "
+                    "z vybratej mustry."
+                )
+
+        # --------------------------------------------------
+        # STIAHNUTIE EXCELU
+        # --------------------------------------------------
+
+        excel_key = (
+            f"ksp_excel_{project_id}"
+        )
+
+        if excel_key in st.session_state:
+
+            st.download_button(
+                label="⬇️ Stiahnuť KSP Excel",
+
+                data=st.session_state[
+                    excel_key
+                ],
+
+                file_name=(
+                    f"KSP_{selected_name}.xlsx"
+                ),
+
+                mime=(
+                    "application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet"
+                ),
+
+                use_container_width=True
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"Chyba pri načítaní "
+            f"detailu projektu: {e}"
+        )
