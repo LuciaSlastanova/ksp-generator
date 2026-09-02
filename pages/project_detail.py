@@ -8,7 +8,11 @@ from database import (
 )
 
 from file_processing import extract_text_from_file
-from ai import improve_technical_procedure
+from ai import (
+    improve_technical_procedure,
+    generate_ksp_rows
+)
+from excel_export import create_ksp_excel
 
 
 def show_project_detail():
@@ -21,14 +25,25 @@ def show_project_detail():
             st.info("Zatiaľ nemáš uložený žiadny projekt.")
             return
 
-        project_names = [p["name"] for p in projects]
+        # --------------------------------------------------
+        # VÝBER PROJEKTU
+        # --------------------------------------------------
 
-        active_project = st.session_state.get("active_project")
+        project_names = [
+            project["name"]
+            for project in projects
+        ]
+
+        active_project = st.session_state.get(
+            "active_project"
+        )
 
         default_index = 0
 
         if active_project in project_names:
-            default_index = project_names.index(active_project)
+            default_index = project_names.index(
+                active_project
+            )
 
         selected_name = st.selectbox(
             "Vyber projekt",
@@ -36,35 +51,40 @@ def show_project_detail():
             index=default_index
         )
 
+        st.session_state["active_project"] = selected_name
+
         selected_project = next(
-            p for p in projects
-            if p["name"] == selected_name
+            project
+            for project in projects
+            if project["name"] == selected_name
         )
 
         project_id = selected_project["id"]
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # EXISTUJÚCE PODKLADY
-        # ------------------------------------------
+        # --------------------------------------------------
 
         st.markdown("### 📄 Existujúce podklady")
 
-        documents = get_project_documents(project_id)
+        documents = get_project_documents(
+            project_id
+        )
 
         if not documents:
             st.info(
                 "K projektu zatiaľ nie sú uložené žiadne dokumenty."
             )
-
         else:
             for doc in documents:
                 st.write(
-                    f"- {doc['document_type']}: {doc['file_name']}"
+                    f"- {doc['document_type']}: "
+                    f"{doc['file_name']}"
                 )
 
-        # ------------------------------------------
-        # DOPLNENIE NOVÉHO PODKLADU
-        # ------------------------------------------
+        # --------------------------------------------------
+        # DOPLNENIE PODKLADOV
+        # --------------------------------------------------
 
         st.markdown("### ➕ Doplniť podklady")
 
@@ -117,27 +137,34 @@ def show_project_detail():
             )
 
             st.success(
-                f"Súbor '{new_file.name}' bol pridaný k projektu."
+                f"Súbor '{new_file.name}' "
+                f"bol pridaný k projektu."
             )
 
             st.rerun()
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # AI ANALÝZA
-        # ------------------------------------------
+        # --------------------------------------------------
 
         st.markdown("### 🤖 AI analýza projektu")
 
         instruction = st.text_area(
             "Čo má AI urobiť?",
             value=(
-                "Vytvor návrh kontrolného a skúšobného plánu pre tento projekt. "
-                "Vychádzaj z technickej správy, rozpočtu, výkresov a "
-                "referenčného KSP. KSP šablónu používaj ako vzor štruktúry. "
-                "Nevymýšľaj normy ani skúšky, ktoré nie sú podložené dokumentmi. "
-                "Ak niečo nie je možné určiť, označ to ako OVERIŤ."
+                "Vytvor návrh kontrolného a skúšobného "
+                "plánu pre tento projekt. "
+                "Referenčný KSP používaj ako záväzný "
+                "zdroj kontrol a skúšok. "
+                "KSP šablónu / mustru používaj ako vzor "
+                "štruktúry výsledného KSP. "
+                "Technickú správu, rozpočet a výkresy "
+                "použi na určenie konkrétneho rozsahu prác. "
+                "Nevymýšľaj nové skúšky, kontroly ani normy. "
+                "Ak niečo nie je možné jednoznačne určiť, "
+                "označ to ako OVERIŤ."
             ),
-            height=150
+            height=170
         )
 
         if st.button(
@@ -186,17 +213,113 @@ Súbor: {doc['file_name']}
                     instruction
                 )
 
-            st.session_state["ksp_ai_result"] = result
+            st.session_state[
+                f"ksp_ai_result_{project_id}"
+            ] = result
 
-        # ------------------------------------------
+            st.session_state[
+                f"project_text_{project_id}"
+            ] = project_text
+
+        # --------------------------------------------------
         # ZOBRAZENIE AI VÝSLEDKU
-        # ------------------------------------------
+        # --------------------------------------------------
 
-        if "ksp_ai_result" in st.session_state:
+        result_key = f"ksp_ai_result_{project_id}"
+
+        if result_key in st.session_state:
             st.markdown("### 📋 Návrh KSP")
 
             st.write(
-                st.session_state["ksp_ai_result"]
+                st.session_state[result_key]
+            )
+
+        # --------------------------------------------------
+        # GENEROVANIE EXCEL KSP
+        # --------------------------------------------------
+
+        st.markdown("### 📥 Vygenerovať KSP Excel")
+
+        template_document = next(
+            (
+                doc
+                for doc in documents
+                if doc["document_type"] == "ksp_template"
+            ),
+            None
+        )
+
+        if not template_document:
+            st.warning(
+                "Projekt nemá nahranú KSP šablónu / mustru."
+            )
+
+        else:
+            if st.button(
+                "Vygenerovať KSP Excel",
+                use_container_width=True
+            ):
+                project_text_key = (
+                    f"project_text_{project_id}"
+                )
+
+                if project_text_key not in st.session_state:
+                    st.warning(
+                        "Najprv spusti AI analýzu projektu."
+                    )
+                    return
+
+                with st.spinner(
+                    "AI pripravuje štruktúrované riadky KSP..."
+                ):
+                    ksp_rows = generate_ksp_rows(
+                        st.session_state[
+                            project_text_key
+                        ]
+                    )
+
+                with st.spinner(
+                    "Vytváram Excel podľa KSP mustry..."
+                ):
+                    template_bytes = download_project_file(
+                        template_document["file_path"]
+                    )
+
+                    excel_bytes = create_ksp_excel(
+                        template_bytes,
+                        ksp_rows
+                    )
+
+                st.session_state[
+                    f"ksp_excel_{project_id}"
+                ] = excel_bytes
+
+                st.session_state[
+                    f"ksp_rows_{project_id}"
+                ] = ksp_rows
+
+                st.success(
+                    "KSP Excel bol vytvorený."
+                )
+
+        # --------------------------------------------------
+        # STIAHNUTIE HOTOVÉHO EXCELU
+        # --------------------------------------------------
+
+        excel_key = f"ksp_excel_{project_id}"
+
+        if excel_key in st.session_state:
+            st.download_button(
+                label="⬇️ Stiahnuť KSP Excel",
+                data=st.session_state[excel_key],
+                file_name=(
+                    f"KSP_{selected_name}.xlsx"
+                ),
+                mime=(
+                    "application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet"
+                ),
+                use_container_width=True
             )
 
     except Exception as e:
