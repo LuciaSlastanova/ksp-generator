@@ -27,15 +27,67 @@ COLUMN_MAP = {
 }
 
 
-def copy_cell_style(source_cell, target_cell):
+# --------------------------------------------------
+# POMOCNÉ FUNKCIE PRE ZLÚČENÉ BUNKY
+# --------------------------------------------------
+
+def get_real_cell(
+    worksheet,
+    row,
+    column
+):
     """
-    Skopíruje vzhľad bunky zo šablóny.
+    Ak bunka patrí do zlúčenej oblasti,
+    vráti ľavú hornú zapisovateľnú bunku.
     """
 
-    if isinstance(source_cell, MergedCell):
+    cell = worksheet.cell(
+        row=row,
+        column=column
+    )
+
+    if not isinstance(
+        cell,
+        MergedCell
+    ):
+        return cell
+
+    for merged_range in worksheet.merged_cells.ranges:
+
+        if cell.coordinate in merged_range:
+
+            return worksheet.cell(
+                row=merged_range.min_row,
+                column=merged_range.min_col
+            )
+
+    return None
+
+
+def copy_cell_style(
+    source_cell,
+    target_cell
+):
+    """
+    Skopíruje formátovanie bunky.
+    """
+
+    if source_cell is None:
         return
 
-    if isinstance(target_cell, MergedCell):
+    if target_cell is None:
+        return
+
+    if isinstance(
+        source_cell,
+        MergedCell
+    ):
+        return
+
+    if isinstance(
+        target_cell,
+        MergedCell
+    ):
         return
 
     if source_cell.has_style:
@@ -68,46 +120,263 @@ def copy_cell_style(source_cell, target_cell):
     )
 
 
-def get_real_cell(
-    worksheet,
-    row,
-    column
-):
+# --------------------------------------------------
+# HLAVIČKA KSP
+# --------------------------------------------------
+
+def normalize_text(value):
     """
-    Ak bunka patrí do zlúčenej oblasti,
-    vráti ľavú hornú bunku tejto oblasti.
+    Pomocná funkcia na porovnávanie názvov buniek.
     """
 
-    cell = worksheet.cell(
-        row=row,
-        column=column
+    if value is None:
+        return ""
+
+    return (
+        str(value)
+        .strip()
+        .lower()
+        .replace(":", "")
     )
 
-    if not isinstance(
-        cell,
-        MergedCell
+
+def find_label_cell(
+    worksheet,
+    possible_labels
+):
+    """
+    Nájde v hornej časti KSP bunku,
+    ktorá obsahuje napr. Stavba, Objekt,
+    Zhotoviteľ alebo Objednávateľ.
+    """
+
+    normalized_labels = [
+        normalize_text(label)
+        for label in possible_labels
+    ]
+
+    # Hlavičku hľadáme iba hore,
+    # aby sme náhodou nemenili údaje v tabuľke KSP.
+    max_search_row = min(
+        30,
+        worksheet.max_row
+    )
+
+    max_search_column = min(
+        20,
+        worksheet.max_column
+    )
+
+    for row in range(
+        1,
+        max_search_row + 1
     ):
-        return cell
+        for column in range(
+            1,
+            max_search_column + 1
+        ):
 
-    for merged_range in worksheet.merged_cells.ranges:
-
-        if cell.coordinate in merged_range:
-
-            return worksheet.cell(
-                row=merged_range.min_row,
-                column=merged_range.min_col
+            cell = worksheet.cell(
+                row=row,
+                column=column
             )
+
+            if isinstance(
+                cell,
+                MergedCell
+            ):
+                continue
+
+            cell_text = normalize_text(
+                cell.value
+            )
+
+            if not cell_text:
+                continue
+
+            for label in normalized_labels:
+
+                if (
+                    cell_text == label
+                    or cell_text.startswith(label)
+                ):
+                    return cell
 
     return None
 
+
+def find_value_cell_next_to_label(
+    worksheet,
+    label_cell
+):
+    """
+    Nájde vhodnú bunku napravo od názvu položky.
+
+    Napríklad:
+    A4 = Stavba:
+    B4 = názov stavby
+    """
+
+    if label_cell is None:
+        return None
+
+    row = label_cell.row
+    start_column = label_cell.column + 1
+
+    # Hľadáme najbližšiu zapisovateľnú bunku napravo.
+    for column in range(
+        start_column,
+        min(
+            worksheet.max_column,
+            start_column + 8
+        ) + 1
+    ):
+
+        real_cell = get_real_cell(
+            worksheet,
+            row,
+            column
+        )
+
+        if real_cell is None:
+            continue
+
+        # Nesmie to byť tá istá bunka ako label
+        if real_cell.coordinate == label_cell.coordinate:
+            continue
+
+        return real_cell
+
+    return None
+
+
+def write_header_value(
+    worksheet,
+    labels,
+    value
+):
+    """
+    Nájde položku hlavičky podľa názvu
+    a zapíše novú hodnotu vedľa nej.
+    """
+
+    if not value:
+        return False
+
+    if value == "OVERIŤ":
+        return False
+
+    label_cell = find_label_cell(
+        worksheet,
+        labels
+    )
+
+    if label_cell is None:
+        return False
+
+    value_cell = find_value_cell_next_to_label(
+        worksheet,
+        label_cell
+    )
+
+    if value_cell is None:
+        return False
+
+    value_cell.value = value
+
+    return True
+
+
+def update_project_header(
+    worksheet,
+    metadata
+):
+    """
+    Prepíše údaje starej stavby v mustre
+    údajmi, ktoré boli overené v kroku 1.
+    """
+
+    if not metadata:
+        return
+
+    stavba = metadata.get(
+        "stavba",
+        {}
+    ).get(
+        "value"
+    )
+
+    objekt = metadata.get(
+        "objekt",
+        {}
+    ).get(
+        "value"
+    )
+
+    zhotovitel = metadata.get(
+        "zhotovitel",
+        {}
+    ).get(
+        "value"
+    )
+
+    objednavatel = metadata.get(
+        "objednavatel",
+        {}
+    ).get(
+        "value"
+    )
+
+    write_header_value(
+        worksheet,
+        [
+            "Stavba",
+            "Názov stavby"
+        ],
+        stavba
+    )
+
+    write_header_value(
+        worksheet,
+        [
+            "Objekt",
+            "Stavebný objekt",
+            "SO"
+        ],
+        objekt
+    )
+
+    write_header_value(
+        worksheet,
+        [
+            "Zhotoviteľ",
+            "Dodávateľ"
+        ],
+        zhotovitel
+    )
+
+    write_header_value(
+        worksheet,
+        [
+            "Objednávateľ",
+            "Investor",
+            "Stavebník"
+        ],
+        objednavatel
+    )
+
+
+# --------------------------------------------------
+# PÔVODNÝ OBSAH KSP
+# --------------------------------------------------
 
 def clear_existing_ksp_rows(
     worksheet,
     start_row
 ):
     """
-    Vymaže pôvodné hodnoty KSP
-    bez zásahu do zlúčených buniek.
+    Vymaže pôvodné hodnoty dátových riadkov KSP,
+    ale zachová štruktúru a formátovanie.
     """
 
     for row in range(
@@ -131,13 +400,28 @@ def clear_existing_ksp_rows(
             cell.value = None
 
 
+# --------------------------------------------------
+# TVORBA VÝSLEDNÉHO KSP
+# --------------------------------------------------
+
 def create_ksp_excel(
     template_bytes,
-    ksp_rows
+    ksp_rows,
+    metadata=None
 ):
     """
-    Vytvorí nový KSP Excel
-    podľa vybratej KSP mustry.
+    Vytvorí nový KSP Excel.
+
+    template_bytes:
+        vybraná KSP mustra
+
+    ksp_rows:
+        riadky KSP vytvorené AI
+
+    metadata:
+        overené údaje z kroku 1:
+        stavba, objekt, zhotoviteľ,
+        objednávateľ
     """
 
     template_file = io.BytesIO(
@@ -158,11 +442,20 @@ def create_ksp_excel(
         KSP_SHEET_NAME
     ]
 
-    style_source_row = START_ROW
+    # --------------------------------------------------
+    # PREPÍSANIE HLAVIČKY
+    # --------------------------------------------------
+
+    update_project_header(
+        worksheet,
+        metadata
+    )
 
     # --------------------------------------------------
-    # VYČISTENIE STARÝCH KSP RIADKOV
+    # VYČISTENIE STARÝCH RIADKOV
     # --------------------------------------------------
+
+    style_source_row = START_ROW
 
     clear_existing_ksp_rows(
         worksheet,
@@ -207,15 +500,13 @@ def create_ksp_excel(
                     target_cell
                 )
 
-            value = item.get(
+            target_cell.value = item.get(
                 field_name,
                 ""
             )
 
-            target_cell.value = value
-
     # --------------------------------------------------
-    # ULOŽENIE VÝSLEDNÉHO EXCELU
+    # ULOŽENIE
     # --------------------------------------------------
 
     output = io.BytesIO()
