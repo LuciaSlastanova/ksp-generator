@@ -1,7 +1,12 @@
 import json
 import streamlit as st
+
 from openai import OpenAI
 
+
+# --------------------------------------------------
+# OPENAI CLIENT
+# --------------------------------------------------
 
 def get_openai_client():
     return OpenAI(
@@ -9,43 +14,59 @@ def get_openai_client():
     )
 
 
-def improve_technical_procedure(text, instruction):
+# --------------------------------------------------
+# BEŽNÁ AI ANALÝZA PROJEKTU
+# --------------------------------------------------
+
+def improve_technical_procedure(
+    text,
+    instruction
+):
     client = get_openai_client()
 
     response = client.responses.create(
         model="gpt-5.6-terra",
+
         instructions="""
 Si AI asistent pre kontrolné a skúšobné plány (KSP)
 v stavebníctve.
 
-Referenčný KSP je záväzný zdroj pre:
-- názvy procesov a subprocesov,
-- kontroly,
-- skúšky,
-- spôsob kontroly,
-- normy,
-- početnosť,
-- tolerancie a dokumentovanie.
+ZDROJE:
 
-KSP šablóna / mustra určuje iba štruktúru a formát výsledného dokumentu.
+1. REFERENČNÝ KSP
+- je záväzný zdroj pre názvy procesov,
+  kontroly, skúšky, spôsob kontroly,
+  normy, početnosť a tolerancie
+- nevytváraj skúšky ani kontroly,
+  ktoré v referenčnom KSP nie sú
 
-Technická správa, rozpočet a výkresy určujú konkrétny rozsah
-prác daného projektu.
+2. KSP ŠABLÓNA / MUSTRA
+- určuje iba štruktúru a formát výsledného dokumentu
+- údaje o starej stavbe alebo starej firme ignoruj
 
-Nevymýšľaj nové skúšky, kontroly, normy ani sekcie,
-ktoré nie sú podložené referenčným KSP.
+3. TECHNICKÁ SPRÁVA, ROZPOČET A VÝKRESY
+- určujú konkrétny rozsah prác projektu
+- používaj ich na materiály, množstvá,
+  objekty a technologické údaje
 
-Ak niečo nie je možné určiť, označ to ako OVERIŤ.
+PRAVIDLÁ:
 
-Nevytváraj sekcie typu:
+- Nevymýšľaj nové skúšky.
+- Nevymýšľaj nové normy.
+- Nevymýšľaj nové sekcie.
+- Ak údaj nie je možné určiť,
+  označ ho ako OVERIŤ.
+
+Nevytváraj sekcie ako:
 - Záverečné skúšky
 - Odovzdanie stavby
 - Súhrnné skúšky
 
-pokiaľ sa nenachádzajú v referenčnom KSP.
+ak sa nenachádzajú v referenčnom KSP.
 
 Odpovedaj po slovensky.
 """,
+
         input=f"""
 PODKLADY PROJEKTU:
 
@@ -60,44 +81,61 @@ POŽIADAVKA:
     return response.output_text
 
 
+# --------------------------------------------------
+# RIADKY PRE KSP EXCEL
+# --------------------------------------------------
+
 def generate_ksp_rows(text):
     client = get_openai_client()
 
     response = client.responses.create(
         model="gpt-5.6-terra",
+
         instructions="""
 Si AI systém na tvorbu KSP v stavebníctve.
 
-Tvojou úlohou je vytvoriť RIADKY KSP zo zadaných projektových podkladov.
+Tvojou úlohou je vytvoriť RIADKY KSP
+zo zadaných projektových podkladov.
 
 PRIORITA ZDROJOV:
 
-1. Referenčný KSP
-   - určuje povolené kontroly a skúšky
-   - určuje spôsob kontroly
-   - určuje normy
-   - určuje typické početnosti
-   - určuje tolerancie
+1. REFERENČNÝ KSP
 
-2. Technická správa, rozpočet a výkresy
-   - určujú, ktoré práce sa v projekte skutočne realizujú
-   - určujú materiály, rozmery, množstvá a konkrétny rozsah
+Použi ho ako záväzný zdroj pre:
+- kontroly
+- skúšky
+- spôsob kontroly
+- kritériá
+- normy
+- početnosť
+- tolerancie
+- dokumentovanie
 
-3. KSP šablóna
-   - určuje formát dokumentu
-   - nie je zdrojom nových skúšok
+2. TECHNICKÁ SPRÁVA, ROZPOČET A VÝKRESY
 
-ZÁSADY:
+Použi ich na:
+- určenie realizovaných prác
+- materiály
+- množstvá
+- konštrukcie
+- konkrétny rozsah projektu
+
+3. KSP MUSTRA
+
+Použi ju iba ako vzor štruktúry dokumentu.
+
+PRAVIDLÁ:
 
 - Nevymýšľaj nové skúšky.
 - Nevymýšľaj nové normy.
-- Nevymýšľaj nové sekcie.
-- Použi iba položky relevantné pre konkrétny projekt.
-- Ak údaj nie je možné bezpečne určiť, použi "OVERIŤ".
-- Nevkladaj vysvetľujúci text.
-- Výstup musí byť iba validný JSON.
+- Nevymýšľaj nové procesy.
+- Použi iba položky relevantné pre projekt.
+- Ak údaj nie je možné bezpečne určiť,
+  použi "OVERIŤ".
 
-Každý riadok musí mať tieto polia:
+Výstup musí byť iba validný JSON.
+
+Každý riadok musí obsahovať:
 
 poradie
 subproces
@@ -133,20 +171,30 @@ Výstup:
   }
 ]
 
-Vráť iba JSON.
+Nevkladaj žiadny text mimo JSON.
 """,
+
         input=text
     )
 
-    raw_result = response.output_text.strip()
+    raw_result = (
+        response.output_text
+        .strip()
+    )
 
-    if raw_result.startswith("```json"):
+    if raw_result.startswith(
+        "```json"
+    ):
         raw_result = raw_result[7:]
 
-    if raw_result.startswith("```"):
+    if raw_result.startswith(
+        "```"
+    ):
         raw_result = raw_result[3:]
 
-    if raw_result.endswith("```"):
+    if raw_result.endswith(
+        "```"
+    ):
         raw_result = raw_result[:-3]
 
     return json.loads(
@@ -154,90 +202,291 @@ Vráť iba JSON.
     )
 
 
+# --------------------------------------------------
+# KONTROLA HLAVIČKY PROJEKTU
+# --------------------------------------------------
+
 def extract_project_metadata(text):
     """
-    Vytiahne základné údaje projektu
-    a skontroluje zhodu medzi dokumentmi.
+    Zistí údaje pre hlavičku KSP
+    a porovná ich medzi projektovými dokumentmi.
     """
 
     client = get_openai_client()
 
     response = client.responses.create(
         model="gpt-5.6-terra",
+
         instructions="""
-Si AI systém na kontrolu základných údajov stavebného projektu.
+Si AI systém na kontrolu údajov
+stavebného projektu.
 
-Zo zadaných projektových dokumentov zisti:
+Tvojou úlohou je z poskytnutých dokumentov
+zistiť údaje pre hlavičku KSP:
 
-- názov stavby
-- objekt / stavebný objekt / SO
+- STAVBA
+- OBJEKT / SO
+- ZHOTOVITEĽ
+- OBJEDNÁVATEĽ / INVESTOR
+
+
+========================================
+ZDROJE
+========================================
+
+Dokument môže obsahovať:
+
+- technickú správu
+- cenovú ponuku
+- rozpočet
+- titulnú stranu ZoD
+- časť Zmluvy o dielo
+
+ZoD môže byť vložená priamo
+na začiatku technickej správy.
+
+Nehľadaj iba presný názov dokumentu.
+Čítaj jeho obsah.
+
+
+========================================
+STAVBA
+========================================
+
+Primárne hľadaj názov stavby v:
+
+1. technickej správe
+2. Zmluve o dielo / ZoD
+3. cenovej ponuke alebo rozpočte
+
+Ak sa názvy významovo zhodujú,
+použi najúplnejší názov.
+
+Príklad:
+
+"JAHODNÁ - KANALIZÁCIA"
+
+a
+
+"JAHODNÁ - KANALIZÁCIA - II. etapa"
+
+sa môžu považovať za zhodné,
+ak dokumenty jasne patria
+k tomu istému projektu.
+
+
+========================================
+OBJEKT / SO
+========================================
+
+Hľadaj napríklad:
+
+- SO
+- stavebný objekt
+- objekt
+- časť stavby
+- stoková sieť
+- kanalizačné prípojky
+- čerpacia stanica
+
+Primárne používaj technickú správu.
+
+Porovnaj s:
+- rozpočtom
+- ZoD
+- cenovou ponukou
+
+Ak je objektov viac,
+uveď ich prehľadne.
+
+Nevytváraj číslo SO,
+ak v dokumentoch nie je uvedené.
+
+
+========================================
+ZHOTOVITEĽ
+========================================
+
+Hľadaj aj označenia:
+
+- Zhotoviteľ
+- Dodávateľ
+- Zhotoviteľ diela
+- Dodávateľ stavby
+- Zmluvná strana - zhotoviteľ
+
+Primárne používaj:
+
+1. ZoD
+2. cenovú ponuku
+3. rozpočet
+
+Ak je pri označení firmy uvedený názov spoločnosti,
+IČO, sídlo alebo kontaktné údaje,
+považuj to za silný dôkaz.
+
+NIKDY nepouži ako zhotoviteľa firmu,
+ktorá pochádza iba zo vzorového KSP
+alebo referenčného KSP.
+
+
+========================================
+OBJEDNÁVATEĽ / INVESTOR
+========================================
+
+Hľadaj aj označenia:
+
+- Objednávateľ
+- Investor
+- Objednávateľ diela
+- Stavebník
+- Zmluvná strana - objednávateľ
+
+Primárne používaj:
+
+1. ZoD
+2. cenovú ponuku
+3. rozpočet
+4. technickú správu
+
+Ak dokument jasne uvádza
+objednávateľa a jeho firmu,
+použi tento údaj.
+
+
+========================================
+KONTROLA ZHODY
+========================================
+
+Pre každý údaj nastav status.
+
+ZHODA
+- údaj bol nájdený
+- dokumenty sa nebijú
+- alebo sa rovnaký údaj nachádza
+  vo viacerých dokumentoch
+
+NEZHODA
+- dva dôveryhodné dokumenty
+  uvádzajú rozdielne údaje
+
+OVERIŤ
+- údaj sa nepodarilo nájsť
+- je nejednoznačný
+- alebo nie je dostatok podkladov
+
+
+DÔLEŽITÉ:
+
+Ak je údaj jasne uvedený iba v jednom
+dôveryhodnom dokumente a nič mu neodporuje,
+môžeš ho použiť.
+
+Nemusíš vyžadovať,
+aby bol rovnaký údaj uvedený dvakrát.
+
+V takom prípade môže byť status ZHODA.
+
+
+========================================
+ZAKÁZANÉ ZDROJE PRE HLAVIČKU
+========================================
+
+Ak by sa v texte nachádzal obsah:
+
+- KSP mustry
+- vzorového KSP
+- referenčného KSP
+
+ich údaje o:
+
+- starej stavbe
+- starom objekte
+- starej firme
+- starom objednávateľovi
+- starom zhotoviteľovi
+
+IGNORUJ.
+
+Tieto dokumenty nesmú určovať
+hlavičku nového projektu.
+
+
+========================================
+ZÁKAZ DOMÝŠĽANIA
+========================================
+
+Nevymýšľaj:
+
+- názov firmy
+- objekt
+- číslo SO
+- objednávateľa
 - zhotoviteľa
-- objednávateľa alebo investora
+- názov stavby
 
-PRAVIDLÁ:
+Ak údaj naozaj nie je v podkladoch,
+použi OVERIŤ.
 
-1. STAVBA
-- Primárne vychádzaj z technickej správy.
-- Porovnaj názov s rozpočtom alebo cenovou ponukou.
-- Ak sa názvy významovo zhodujú, použi úplnejší názov.
-- Ak si odporujú, nastav hodnotu na "OVERIŤ".
 
-2. OBJEKT
-- Over podľa technickej správy, rozpočtu a výkresov.
-- Zachovaj označenie SO, ak je uvedené.
-- Ak sa údaje nezhodujú, použi "OVERIŤ".
+========================================
+VÝSTUP
+========================================
 
-3. ZHOTOVITEĽ
-- Primárnym zdrojom je cenová ponuka alebo rozpočet zhotoviteľa.
-- Nepoužívaj firmu z referenčného KSP ani zo vzorovej KSP mustry.
-- Ak zhotoviteľa nemožno jednoznačne určiť, použi "OVERIŤ".
-
-4. OBJEDNÁVATEĽ / INVESTOR
-- Použi iba údaj jednoznačne uvedený v projektových podkladoch.
-- Ak chýba alebo je nejasný, použi "OVERIŤ".
-
-5. KSP MUSTRA A REFERENČNÝ KSP
-- Údaje o starej stavbe, firme, objednávateľovi alebo objekte
-  z týchto dokumentov IGNORUJ.
-- Tieto dokumenty nesmú byť zdrojom hlavičky nového projektu.
-
-6. NIKDY NEVYMÝŠĽAJ ÚDAJE.
-
-Výstup musí byť iba validný JSON v tomto tvare:
+Vráť iba validný JSON:
 
 {
   "stavba": {
     "value": "...",
-    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+    "status": "ZHODA"
   },
+
   "objekt": {
     "value": "...",
-    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+    "status": "ZHODA"
   },
+
   "zhotovitel": {
     "value": "...",
-    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+    "status": "ZHODA"
   },
+
   "objednavatel": {
     "value": "...",
-    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+    "status": "ZHODA"
   }
 }
 
+Povolené statusy sú iba:
+
+ZHODA
+NEZHODA
+OVERIŤ
+
 Nevkladaj žiadny text mimo JSON.
 """,
+
         input=text
     )
 
-    raw_result = response.output_text.strip()
+    raw_result = (
+        response.output_text
+        .strip()
+    )
 
-    if raw_result.startswith("```json"):
+    if raw_result.startswith(
+        "```json"
+    ):
         raw_result = raw_result[7:]
 
-    if raw_result.startswith("```"):
+    if raw_result.startswith(
+        "```"
+    ):
         raw_result = raw_result[3:]
 
-    if raw_result.endswith("```"):
+    if raw_result.endswith(
+        "```"
+    ):
         raw_result = raw_result[:-3]
 
     return json.loads(
