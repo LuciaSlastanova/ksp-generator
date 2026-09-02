@@ -101,7 +101,7 @@ def show_new_project():
     with col1:
         technical_report = st.file_uploader(
             "Technická správa",
-            type=["pdf", "docx"]
+            type=["pdf", "docx", "doc"]
         )
 
         budget = st.file_uploader(
