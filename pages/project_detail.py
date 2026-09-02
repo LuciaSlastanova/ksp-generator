@@ -8,10 +8,12 @@ from database import (
 )
 
 from file_processing import extract_text_from_file
+
 from ai import (
     improve_technical_procedure,
     generate_ksp_rows
 )
+
 from excel_export import create_ksp_excel
 
 
@@ -51,7 +53,9 @@ def show_project_detail():
             index=default_index
         )
 
-        st.session_state["active_project"] = selected_name
+        st.session_state[
+            "active_project"
+        ] = selected_name
 
         selected_project = next(
             project
@@ -65,7 +69,9 @@ def show_project_detail():
         # EXISTUJÚCE PODKLADY
         # --------------------------------------------------
 
-        st.markdown("### 📄 Existujúce podklady")
+        st.markdown(
+            "### 📄 Existujúce podklady"
+        )
 
         documents = get_project_documents(
             project_id
@@ -86,7 +92,9 @@ def show_project_detail():
         # DOPLNENIE PODKLADOV
         # --------------------------------------------------
 
-        st.markdown("### ➕ Doplniť podklady")
+        st.markdown(
+            "### ➕ Doplniť podklady"
+        )
 
         document_type = st.selectbox(
             "Typ dokumentu",
@@ -118,7 +126,9 @@ def show_project_detail():
             use_container_width=True
         ):
             if not new_file:
-                st.warning("Najprv vyber súbor.")
+                st.warning(
+                    "Najprv vyber súbor."
+                )
                 return
 
             type_map = {
@@ -147,7 +157,9 @@ def show_project_detail():
         # AI ANALÝZA
         # --------------------------------------------------
 
-        st.markdown("### 🤖 AI analýza projektu")
+        st.markdown(
+            "### 🤖 AI analýza projektu"
+        )
 
         instruction = st.text_area(
             "Čo má AI urobiť?",
@@ -225,36 +237,102 @@ Súbor: {doc['file_name']}
         # ZOBRAZENIE AI VÝSLEDKU
         # --------------------------------------------------
 
-        result_key = f"ksp_ai_result_{project_id}"
+        result_key = (
+            f"ksp_ai_result_{project_id}"
+        )
 
         if result_key in st.session_state:
-            st.markdown("### 📋 Návrh KSP")
+            st.markdown(
+                "### 📋 Návrh KSP"
+            )
 
             st.write(
-                st.session_state[result_key]
+                st.session_state[
+                    result_key
+                ]
             )
 
         # --------------------------------------------------
         # GENEROVANIE EXCEL KSP
         # --------------------------------------------------
 
-        st.markdown("### 📥 Vygenerovať KSP Excel")
-
-        template_document = next(
-            (
-                doc
-                for doc in documents
-                if doc["document_type"] == "ksp_template"
-            ),
-            None
+        st.markdown(
+            "### 📥 Vygenerovať KSP Excel"
         )
 
-        if not template_document:
+        ksp_templates = [
+            doc
+            for doc in documents
+            if doc["document_type"]
+            == "ksp_template"
+        ]
+
+        reference_ksps = [
+            doc
+            for doc in documents
+            if doc["document_type"]
+            == "reference_ksp"
+        ]
+
+        if not ksp_templates:
             st.warning(
-                "Projekt nemá nahranú KSP šablónu / mustru."
+                "Projekt nemá nahranú "
+                "KSP šablónu / mustru."
             )
 
-        else:
+        if not reference_ksps:
+            st.warning(
+                "Projekt nemá nahraný "
+                "referenčný KSP."
+            )
+
+        if (
+            ksp_templates
+            and reference_ksps
+        ):
+            template_names = [
+                doc["file_name"]
+                for doc in ksp_templates
+            ]
+
+            selected_template_name = st.selectbox(
+                "KSP šablóna / MUSTRA výsledného Excelu",
+                template_names,
+                index=len(template_names) - 1
+            )
+
+            selected_template = next(
+                doc
+                for doc in ksp_templates
+                if doc["file_name"]
+                == selected_template_name
+            )
+
+            reference_names = [
+                doc["file_name"]
+                for doc in reference_ksps
+            ]
+
+            selected_reference_name = st.selectbox(
+                "Referenčný KSP – zdroj kontrol a skúšok",
+                reference_names,
+                index=len(reference_names) - 1
+            )
+
+            selected_reference = next(
+                doc
+                for doc in reference_ksps
+                if doc["file_name"]
+                == selected_reference_name
+            )
+
+            st.info(
+                f"Výsledný Excel bude vytvorený z mustry: "
+                f"**{selected_template['file_name']}**\n\n"
+                f"Kontroly a skúšky budú vychádzať z: "
+                f"**{selected_reference['file_name']}**"
+            )
+
             if st.button(
                 "Vygenerovať KSP Excel",
                 use_container_width=True
@@ -263,7 +341,10 @@ Súbor: {doc['file_name']}
                     f"project_text_{project_id}"
                 )
 
-                if project_text_key not in st.session_state:
+                if (
+                    project_text_key
+                    not in st.session_state
+                ):
                     st.warning(
                         "Najprv spusti AI analýzu projektu."
                     )
@@ -279,15 +360,22 @@ Súbor: {doc['file_name']}
                     )
 
                 with st.spinner(
-                    "Vytváram Excel podľa KSP mustry..."
+                    "Vytváram Excel podľa "
+                    "vybratej KSP mustry..."
                 ):
-                    template_bytes = download_project_file(
-                        template_document["file_path"]
+                    template_bytes = (
+                        download_project_file(
+                            selected_template[
+                                "file_path"
+                            ]
+                        )
                     )
 
-                    excel_bytes = create_ksp_excel(
-                        template_bytes,
-                        ksp_rows
+                    excel_bytes = (
+                        create_ksp_excel(
+                            template_bytes,
+                            ksp_rows
+                        )
                     )
 
                 st.session_state[
@@ -299,19 +387,24 @@ Súbor: {doc['file_name']}
                 ] = ksp_rows
 
                 st.success(
-                    "KSP Excel bol vytvorený."
+                    "KSP Excel bol vytvorený "
+                    "z vybratej mustry."
                 )
 
         # --------------------------------------------------
         # STIAHNUTIE HOTOVÉHO EXCELU
         # --------------------------------------------------
 
-        excel_key = f"ksp_excel_{project_id}"
+        excel_key = (
+            f"ksp_excel_{project_id}"
+        )
 
         if excel_key in st.session_state:
             st.download_button(
                 label="⬇️ Stiahnuť KSP Excel",
-                data=st.session_state[excel_key],
+                data=st.session_state[
+                    excel_key
+                ],
                 file_name=(
                     f"KSP_{selected_name}.xlsx"
                 ),
@@ -324,5 +417,6 @@ Súbor: {doc['file_name']}
 
     except Exception as e:
         st.error(
-            f"Chyba pri načítaní detailu projektu: {e}"
+            f"Chyba pri načítaní "
+            f"detailu projektu: {e}"
         )
