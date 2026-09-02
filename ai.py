@@ -149,4 +149,97 @@ Vráť iba JSON.
     if raw_result.endswith("```"):
         raw_result = raw_result[:-3]
 
-    return json.loads(raw_result.strip())
+    return json.loads(
+        raw_result.strip()
+    )
+
+
+def extract_project_metadata(text):
+    """
+    Vytiahne základné údaje projektu
+    a skontroluje zhodu medzi dokumentmi.
+    """
+
+    client = get_openai_client()
+
+    response = client.responses.create(
+        model="gpt-5.6-terra",
+        instructions="""
+Si AI systém na kontrolu základných údajov stavebného projektu.
+
+Zo zadaných projektových dokumentov zisti:
+
+- názov stavby
+- objekt / stavebný objekt / SO
+- zhotoviteľa
+- objednávateľa alebo investora
+
+PRAVIDLÁ:
+
+1. STAVBA
+- Primárne vychádzaj z technickej správy.
+- Porovnaj názov s rozpočtom alebo cenovou ponukou.
+- Ak sa názvy významovo zhodujú, použi úplnejší názov.
+- Ak si odporujú, nastav hodnotu na "OVERIŤ".
+
+2. OBJEKT
+- Over podľa technickej správy, rozpočtu a výkresov.
+- Zachovaj označenie SO, ak je uvedené.
+- Ak sa údaje nezhodujú, použi "OVERIŤ".
+
+3. ZHOTOVITEĽ
+- Primárnym zdrojom je cenová ponuka alebo rozpočet zhotoviteľa.
+- Nepoužívaj firmu z referenčného KSP ani zo vzorovej KSP mustry.
+- Ak zhotoviteľa nemožno jednoznačne určiť, použi "OVERIŤ".
+
+4. OBJEDNÁVATEĽ / INVESTOR
+- Použi iba údaj jednoznačne uvedený v projektových podkladoch.
+- Ak chýba alebo je nejasný, použi "OVERIŤ".
+
+5. KSP MUSTRA A REFERENČNÝ KSP
+- Údaje o starej stavbe, firme, objednávateľovi alebo objekte
+  z týchto dokumentov IGNORUJ.
+- Tieto dokumenty nesmú byť zdrojom hlavičky nového projektu.
+
+6. NIKDY NEVYMÝŠĽAJ ÚDAJE.
+
+Výstup musí byť iba validný JSON v tomto tvare:
+
+{
+  "stavba": {
+    "value": "...",
+    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+  },
+  "objekt": {
+    "value": "...",
+    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+  },
+  "zhotovitel": {
+    "value": "...",
+    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+  },
+  "objednavatel": {
+    "value": "...",
+    "status": "ZHODA alebo NEZHODA alebo OVERIŤ"
+  }
+}
+
+Nevkladaj žiadny text mimo JSON.
+""",
+        input=text
+    )
+
+    raw_result = response.output_text.strip()
+
+    if raw_result.startswith("```json"):
+        raw_result = raw_result[7:]
+
+    if raw_result.startswith("```"):
+        raw_result = raw_result[3:]
+
+    if raw_result.endswith("```"):
+        raw_result = raw_result[:-3]
+
+    return json.loads(
+        raw_result.strip()
+    )
