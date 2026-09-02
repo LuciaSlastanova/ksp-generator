@@ -4,7 +4,8 @@ from database import (
     get_projects,
     get_project_documents,
     upload_project_file,
-    download_project_file
+    download_project_file,
+    delete_project_document
 )
 
 from file_processing import extract_text_from_file
@@ -69,9 +70,7 @@ def show_project_detail():
         # EXISTUJÚCE PODKLADY
         # --------------------------------------------------
 
-        st.markdown(
-            "### 📄 Existujúce podklady"
-        )
+        st.markdown("### 📄 Existujúce podklady")
 
         documents = get_project_documents(
             project_id
@@ -89,12 +88,91 @@ def show_project_detail():
                 )
 
         # --------------------------------------------------
+        # AKTUÁLNA KSP MUSTRA
+        # --------------------------------------------------
+
+        st.markdown("### 🧾 Aktuálna KSP mustra")
+
+        ksp_templates = [
+            doc
+            for doc in documents
+            if doc["document_type"] == "ksp_template"
+        ]
+
+        current_template = None
+
+        if ksp_templates:
+            current_template = ksp_templates[-1]
+
+            st.info(
+                f"Aktuálne používaná mustra: "
+                f"**{current_template['file_name']}**"
+            )
+        else:
+            st.warning(
+                "Projekt zatiaľ nemá KSP mustru."
+            )
+
+        # --------------------------------------------------
+        # NAHRADENIE KSP MUSTRY
+        # --------------------------------------------------
+
+        with st.expander(
+            "🔄 Nahradiť KSP mustru"
+        ):
+
+            replacement_template = st.file_uploader(
+                "Vyber novú KSP mustru",
+                type=[
+                    "xlsx",
+                    "xls"
+                ],
+                key=f"replace_template_{project_id}"
+            )
+
+            if st.button(
+                "Nahradiť aktuálnu mustru",
+                use_container_width=True
+            ):
+                if not replacement_template:
+                    st.warning(
+                        "Najprv vyber novú mustru."
+                    )
+                    return
+
+                try:
+                    # Najprv uložíme novú mustru
+                    upload_project_file(
+                        project_id,
+                        replacement_template,
+                        "ksp_template"
+                    )
+
+                    # Starú vymažeme až potom,
+                    # aby sme o mustru neprišli,
+                    # keby upload novej zlyhal.
+                    if current_template:
+                        delete_project_document(
+                            current_template["id"],
+                            current_template["file_path"]
+                        )
+
+                    st.success(
+                        "KSP mustra bola úspešne nahradená."
+                    )
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(
+                        f"Chyba pri nahradení mustry: {e}"
+                    )
+
+        # --------------------------------------------------
         # DOPLNENIE PODKLADOV
         # --------------------------------------------------
 
-        st.markdown(
-            "### ➕ Doplniť podklady"
-        )
+        st.markdown("### ➕ Doplniť podklady")
 
         document_type = st.selectbox(
             "Typ dokumentu",
@@ -157,9 +235,7 @@ def show_project_detail():
         # AI ANALÝZA
         # --------------------------------------------------
 
-        st.markdown(
-            "### 🤖 AI analýza projektu"
-        )
+        st.markdown("### 🤖 AI analýza projektu")
 
         instruction = st.text_area(
             "Čo má AI urobiť?",
@@ -260,18 +336,17 @@ Súbor: {doc['file_name']}
             "### 📥 Vygenerovať KSP Excel"
         )
 
+        # znovu načítame typy zo zoznamu
         ksp_templates = [
             doc
             for doc in documents
-            if doc["document_type"]
-            == "ksp_template"
+            if doc["document_type"] == "ksp_template"
         ]
 
         reference_ksps = [
             doc
             for doc in documents
-            if doc["document_type"]
-            == "reference_ksp"
+            if doc["document_type"] == "reference_ksp"
         ]
 
         if not ksp_templates:
@@ -387,12 +462,11 @@ Súbor: {doc['file_name']}
                 ] = ksp_rows
 
                 st.success(
-                    "KSP Excel bol vytvorený "
-                    "z vybratej mustry."
+                    "KSP Excel bol vytvorený."
                 )
 
         # --------------------------------------------------
-        # STIAHNUTIE HOTOVÉHO EXCELU
+        # STIAHNUTIE EXCELU
         # --------------------------------------------------
 
         excel_key = (
