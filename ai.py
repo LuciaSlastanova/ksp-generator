@@ -60,40 +60,241 @@ def generate_ksp_rows(text):
 
     response = client.responses.create(
         model="gpt-5.6-terra",
+
         instructions="""
-Si AI systém na tvorbu KSP v stavebníctve.
+Si AI systém na tvorbu kontrolného a skúšobného plánu
+(KSP) v stavebníctve.
 
-PRIORITA ZDROJOV:
+TVOJOU ÚLOHOU NIE JE VYTVORIŤ NOVÝ KSP OD NULY.
 
-1. REFERENČNÝ KSP
-- kontroly
-- skúšky
+TVOJOU ÚLOHOU JE VYTVORIŤ NOVÝ KSP
+PODĽA VYBRANÉHO REFERENČNÉHO KSP.
+
+========================================
+1. REFERENČNÝ KSP JE HLAVNÁ OBSAHOVÁ PREDLOHA
+========================================
+
+Referenčný KSP je záväzná obsahová predloha.
+
+Výsledný KSP sa musí obsahovo čo najviac podobať
+na referenčný KSP pre rovnaký alebo podobný druh prác.
+
+Pre každý relevantný riadok referenčného KSP zachovaj,
+pokiaľ je použiteľný pre nový projekt:
+
+- názov subprocesu alebo jeho význam
+- druh kontroly / skúšky
 - spôsob kontroly
-- kritériá
-- normy
+- kritérium
+- technickú normu
 - početnosť
-- tolerancie
-- dokumentovanie
+- toleranciu
+- spôsob dokumentovania
+- zodpovednosť za kontrolu
+- vykonávateľa kontroly, ak je v referenčnom KSP uvedený
 
-2. TECHNICKÁ SPRÁVA, ROZPOČET A VÝKRESY
+NEVYTVÁRAJ vlastnú novú skladbu KSP,
+ak už existuje zodpovedajúca skladba
+v referenčnom KSP.
+
+NEZJEDNODUŠUJ referenčný KSP
+na niekoľko všeobecných riadkov.
+
+Ak referenčný KSP obsahuje napríklad samostatné riadky pre:
+- geodetické vytýčenie
+- výkopové práce
+- lôžko
+- potrubie
+- tvarovky
+- šachty
+- tesniace prvky
+- obsyp
+- zásyp
+- zhutnenie
+- skúšku tesnosti
+
+a tieto práce alebo materiály sa nachádzajú
+aj v novom projekte,
+zachovaj ich ako samostatné relevantné riadky.
+
+========================================
+2. PROJEKTOVÉ PODKLADY URČUJÚ PRISPÔSOBENIE
+========================================
+
+Technická správa, rozpočet, výkresy
+a ostatné projektové podklady určujú:
+
+- ktoré práce sa na novom projekte skutočne vykonávajú
+- konkrétny materiál
+- priemer potrubia
+- typ potrubia
+- typ šachty
+- množstvo
+- dĺžku
+- počet kusov
 - rozsah prác
-- materiály
-- množstvá
-- konštrukcie
 
-3. KSP MUSTRA
-- iba formát výsledného dokumentu
+Ak má nový projekt inú dimenziu alebo materiál
+ako referenčný KSP,
+použi údaj z projektových podkladov.
 
-PRAVIDLÁ:
-- nevymýšľaj skúšky
-- nevymýšľaj normy
-- nevymýšľaj procesy
-- použi iba položky relevantné pre projekt
-- ak údaj nie je možné určiť, použi "OVERIŤ"
+Príklad:
 
-Výstup musí byť iba validný JSON.
+Referenčný KSP:
+PVC DN 160
 
-Každý riadok musí mať:
+Nový projekt:
+PVC DN 150
+
+Výsledok:
+použi PVC DN 150,
+ale zachovaj spôsob kontroly,
+kritérium, početnosť, toleranciu
+a dokumentovanie z referenčného KSP,
+ak sú stále použiteľné.
+
+========================================
+3. ČO SA MÁ VYNECHAŤ
+========================================
+
+Riadok z referenčného KSP vynechaj iba vtedy,
+ak z projektových podkladov vyplýva,
+že sa daná práca, materiál alebo konštrukcia
+v novom projekte nevyskytuje.
+
+Nevynechávaj položku iba preto,
+aby bol KSP kratší.
+
+Nevynechávaj kontroly svojvoľne.
+
+========================================
+4. MINIMALIZÁCIA SKÚŠOK
+========================================
+
+Používateľ môže požadovať čo najmenší rozsah skúšok.
+
+To znamená:
+
+- nepridávaj žiadne skúšky navyše oproti referenčnému KSP
+- nepridávaj duplicitné skúšky
+- nepridávaj skúšky iba "pre istotu"
+- zachovaj skúšky z referenčného KSP,
+  ktoré sú relevantné pre daný rozsah prác
+
+Ak nie je jasné,
+či má byť konkrétna skúška na novom projekte vykonaná,
+NEVYMÝŠĽAJ odpoveď.
+
+V takom prípade:
+- zachovaj relevantný riadok
+- do poznámky uveď "OVERIŤ"
+
+========================================
+5. NORMY A PRÁVNE POŽIADAVKY
+========================================
+
+Normu alebo právny predpis môžeš uviesť iba vtedy,
+ak je:
+
+- uvedený v referenčnom KSP
+alebo
+- uvedený v projektových podkladoch
+
+Nevymýšľaj nové normy.
+Nevymýšľaj čísla noriem.
+Nevymýšľaj zákony.
+
+Ak norma nie je v podkladoch jednoznačne uvedená,
+použi hodnotu:
+
+"OVERIŤ"
+
+========================================
+6. MATERIÁLY A STAVEBNÉ VÝROBKY
+========================================
+
+Ak referenčný KSP obsahuje samostatnú kontrolu
+dokladov alebo vlastností stavebných výrobkov
+a rovnaký druh výrobku je použitý v novom projekte,
+zachovaj túto kontrolu.
+
+Konkrétny názov výrobku, materiál,
+rozmer alebo množstvo však prispôsob
+projektovým podkladom.
+
+========================================
+7. MNOŽSTVÁ
+========================================
+
+Množstvá čerpaj iba z projektových podkladov.
+
+Ak množstvo nevieš jednoznačne určiť,
+použi:
+
+"OVERIŤ"
+
+Nevymýšľaj množstvá.
+
+========================================
+8. ZÁKAZ VYMÝŠĽANIA
+========================================
+
+NESMIEŠ:
+
+- vymýšľať nové skúšky
+- vymýšľať nové kontroly
+- vymýšľať nové normy
+- vymýšľať nové tolerancie
+- vymýšľať nové početnosti
+- vymýšľať nové procesy
+- vymýšľať nové materiály
+- vymýšľať nové množstvá
+
+Ak chýba údaj:
+použi "OVERIŤ".
+
+========================================
+9. PORADIE RIADKOV
+========================================
+
+Poradie riadkov zachovaj čo najbližšie
+poradiu v referenčnom KSP.
+
+Výsledok má pôsobiť ako nový KSP
+vytvorený podľa referenčného KSP,
+nie ako úplne iný dokument.
+
+========================================
+10. JSON VÝSTUP
+========================================
+
+Výstup musí byť iba validné JSON POLE.
+
+Nevracaj vysvetlenie.
+Nevracaj markdown.
+Nevracaj objekt s kľúčom "rows".
+
+Správny tvar:
+
+[
+  {
+    "poradie": "...",
+    "subproces": "...",
+    "mnozstvo": "...",
+    "druh_kontroly": "...",
+    "sposob_kontroly": "...",
+    "kriterium": "...",
+    "pocetnost": "...",
+    "celkovy_pocet": "...",
+    "zodpoveda": "...",
+    "vykona": "...",
+    "tolerancia": "...",
+    "dokumentovanie": "...",
+    "poznamka": "..."
+  }
+]
+
+Každý riadok musí obsahovať všetky tieto kľúče:
 
 poradie
 subproces
@@ -109,8 +310,9 @@ tolerancia
 dokumentovanie
 poznamka
 
-Vráť iba JSON.
+Vráť iba JSON pole.
 """,
+
         input=text
     )
 
@@ -125,9 +327,92 @@ Vráť iba JSON.
     if raw_result.endswith("```"):
         raw_result = raw_result[:-3]
 
-    return json.loads(
+    parsed_result = json.loads(
         raw_result.strip()
     )
+
+    # ------------------------------------------
+    # KONTROLA FORMÁTU
+    # ------------------------------------------
+
+    if isinstance(parsed_result, dict):
+
+        for key in [
+            "rows",
+            "ksp_rows",
+            "items",
+            "data"
+        ]:
+
+            possible_rows = parsed_result.get(
+                key
+            )
+
+            if isinstance(
+                possible_rows,
+                list
+            ):
+                parsed_result = possible_rows
+                break
+
+    if not isinstance(
+        parsed_result,
+        list
+    ):
+        raise ValueError(
+            "AI nevytvorila KSP ako zoznam riadkov."
+        )
+
+    clean_rows = []
+
+    required_fields = [
+        "poradie",
+        "subproces",
+        "mnozstvo",
+        "druh_kontroly",
+        "sposob_kontroly",
+        "kriterium",
+        "pocetnost",
+        "celkovy_pocet",
+        "zodpoveda",
+        "vykona",
+        "tolerancia",
+        "dokumentovanie",
+        "poznamka"
+    ]
+
+    for item in parsed_result:
+
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
+
+        clean_row = {}
+
+        for field in required_fields:
+
+            value = item.get(
+                field,
+                ""
+            )
+
+            if value is None:
+                value = ""
+
+            clean_row[field] = value
+
+        clean_rows.append(
+            clean_row
+        )
+
+    if not clean_rows:
+        raise ValueError(
+            "AI nevytvorila žiadne použiteľné riadky KSP."
+        )
+
+    return clean_rows
 
 
 def extract_project_metadata(text):
