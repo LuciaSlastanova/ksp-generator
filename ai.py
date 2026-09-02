@@ -10,6 +10,29 @@ def get_openai_client():
     )
 
 
+# ==========================================================
+# POMOCNÁ FUNKCIA - ČISTENIE JSON ODPOVEDE
+# ==========================================================
+
+def clean_json_response(raw_result):
+    raw_result = raw_result.strip()
+
+    if raw_result.startswith("```json"):
+        raw_result = raw_result[7:]
+
+    if raw_result.startswith("```"):
+        raw_result = raw_result[3:]
+
+    if raw_result.endswith("```"):
+        raw_result = raw_result[:-3]
+
+    return raw_result.strip()
+
+
+# ==========================================================
+# AI ANALÝZA / TECHNICKÝ POSTUP
+# ==========================================================
+
 def improve_technical_procedure(
     text,
     instruction
@@ -23,21 +46,27 @@ Si AI asistent pre kontrolné a skúšobné plány (KSP)
 v stavebníctve.
 
 REFERENČNÝ KSP:
-- je záväzný zdroj kontrol, skúšok, spôsobov kontroly,
-  noriem, početnosti, tolerancií a dokumentovania
+- je hlavný obsahový vzor
+- je zdroj kontrol, skúšok, spôsobov kontroly,
+  kritérií, noriem, početnosti, tolerancií
+  a dokumentovania
 
 KSP MUSTRA:
 - určuje iba formát a štruktúru výsledného dokumentu
 - staré údaje o stavbe a firmách ignoruj
 
 TECHNICKÁ SPRÁVA, ROZPOČET A VÝKRESY:
-- určujú konkrétny rozsah projektu
+- určujú konkrétny rozsah nového projektu
+- určujú materiály
+- určujú rozmery
+- určujú množstvá
 
 PRAVIDLÁ:
 - nevymýšľaj nové skúšky
 - nevymýšľaj nové normy
 - nevymýšľaj nové sekcie
-- ak údaj nie je možné určiť, označ OVERIŤ
+- údaje existujúce v referenčnom KSP
+  nenahrádzaj slovom OVERIŤ
 
 Odpovedaj po slovensky.
 """,
@@ -55,246 +84,405 @@ POŽIADAVKA:
     return response.output_text
 
 
+# ==========================================================
+# GENEROVANIE RIADKOV KSP
+# ==========================================================
+
 def generate_ksp_rows(text):
     client = get_openai_client()
 
     response = client.responses.create(
         model="gpt-5.6-terra",
 
+        # Web použijeme na overenie aktuálnych
+        # právnych požiadaviek a povinnosti skúšok.
+        tools=[
+            {
+                "type": "web_search",
+                "search_context_size": "low",
+                "filters": {
+                    "allowed_domains": [
+                        "slov-lex.sk",
+                        "normoff.gov.sk",
+                        "mindop.sk"
+                    ]
+                }
+            }
+        ],
+
         instructions="""
-Si AI systém na tvorbu kontrolného a skúšobného plánu
-(KSP) v stavebníctve.
+Si AI systém na tvorbu kontrolných a skúšobných
+plánov KSP pre stavebníctvo na Slovensku.
 
 TVOJOU ÚLOHOU NIE JE VYTVORIŤ NOVÝ KSP OD NULY.
 
-TVOJOU ÚLOHOU JE VYTVORIŤ NOVÝ KSP
-PODĽA VYBRANÉHO REFERENČNÉHO KSP.
+Máš vytvoriť nový KSP tak,
+aby sa obsahovo čo najviac podobal
+na REFERENČNÝ KSP.
 
-========================================
-1. REFERENČNÝ KSP JE HLAVNÁ OBSAHOVÁ PREDLOHA
-========================================
+===============================================
+A. ROZPOZNAJ DOKUMENTY
+===============================================
 
-Referenčný KSP je záväzná obsahová predloha.
+V texte sú dokumenty označené napríklad:
 
-Výsledný KSP sa musí obsahovo čo najviac podobať
-na referenčný KSP pre rovnaký alebo podobný druh prác.
+--- TYP DOKUMENTU: reference_ksp ---
+--- TYP DOKUMENTU: technical_report ---
+--- TYP DOKUMENTU: budget ---
+--- TYP DOKUMENTU: drawing ---
 
-Pre každý relevantný riadok referenčného KSP zachovaj,
-pokiaľ je použiteľný pre nový projekt:
+Dokument typu:
 
-- názov subprocesu alebo jeho význam
-- druh kontroly / skúšky
+reference_ksp
+
+je REFERENČNÝ KSP.
+
+Je to HLAVNÝ OBSAHOVÝ VZOR.
+
+===============================================
+B. REFERENČNÝ KSP JE ZÁKLAD
+===============================================
+
+Najprv si prečítaj celý referenčný KSP.
+
+Výsledný KSP musí obsahovo vychádzať
+z jeho relevantných riadkov.
+
+Ak nový projekt obsahuje rovnaký alebo podobný
+druh práce ako referenčný KSP,
+PREVEZMI z referenčného KSP:
+
+- subproces
+- druh kontroly
 - spôsob kontroly
 - kritérium
-- technickú normu
+- normu alebo predpis
 - početnosť
+- celkový spôsob kontroly
+- zodpovednosť
+- kto kontrolu vykonáva
 - toleranciu
-- spôsob dokumentovania
-- zodpovednosť za kontrolu
-- vykonávateľa kontroly, ak je v referenčnom KSP uvedený
+- dokumentovanie
 
-NEVYTVÁRAJ vlastnú novú skladbu KSP,
-ak už existuje zodpovedajúca skladba
-v referenčnom KSP.
+NEPÍŠ OVERIŤ,
+ak sa údaj nachádza v referenčnom KSP.
 
-NEZJEDNODUŠUJ referenčný KSP
-na niekoľko všeobecných riadkov.
+Ak napríklad referenčný KSP obsahuje:
 
-Ak referenčný KSP obsahuje napríklad samostatné riadky pre:
-- geodetické vytýčenie
-- výkopové práce
+- vizuálnu kontrolu
+- kontrolu dokladov
+- kontrolu rozmerov
+- kontrolu lôžka
+- kontrolu potrubia
+- kontrolu obsypu
+- kontrolu zásypu
+- kontrolu zhutnenia
+- kontrolu šácht
+
+a rovnaká práca sa vykonáva aj na novom projekte,
+použi príslušný riadok referenčného KSP.
+
+===============================================
+C. NEZJEDNODUŠUJ HRUBÝ ŠÚR
+===============================================
+
+Referenčný KSP môže obsahovať viac samostatných
+riadkov pre jednu skupinu prác.
+
+Tieto riadky svojvoľne nespájaj.
+
+Ak referenčný KSP obsahuje samostatné kontroly pre:
+
+- vytýčenie
+- výkop
 - lôžko
 - potrubie
 - tvarovky
-- šachty
-- tesniace prvky
+- tesnenia
+- revízne šachty
 - obsyp
 - zásyp
-- zhutnenie
-- skúšku tesnosti
+- hutnenie
+- skúšku
 
-a tieto práce alebo materiály sa nachádzajú
-aj v novom projekte,
-zachovaj ich ako samostatné relevantné riadky.
+zachovaj podobné členenie,
+ak sa tieto práce nachádzajú aj v novom projekte.
 
-========================================
-2. PROJEKTOVÉ PODKLADY URČUJÚ PRISPÔSOBENIE
-========================================
+Výsledný KSP sa má pri porovnaní
+s referenčným KSP obsahovo podobať.
 
-Technická správa, rozpočet, výkresy
-a ostatné projektové podklady určujú:
+===============================================
+D. NOVÝ PROJEKT MENÍ KONKRÉTNE ÚDAJE
+===============================================
 
-- ktoré práce sa na novom projekte skutočne vykonávajú
-- konkrétny materiál
-- priemer potrubia
-- typ potrubia
+TECHNICKÁ SPRÁVA, ROZPOČET a VÝKRESY
+určujú konkrétny nový projekt.
+
+Z nich použi najmä:
+
+- druh potrubia
+- materiál potrubia
+- DN
+- rozmery
 - typ šachty
+- typ výrobkov
 - množstvo
-- dĺžku
-- počet kusov
+- metre
+- kusy
 - rozsah prác
 
-Ak má nový projekt inú dimenziu alebo materiál
-ako referenčný KSP,
-použi údaj z projektových podkladov.
+Ak je napríklad v referenčnom KSP:
 
-Príklad:
+PVC potrubie DN 160
 
-Referenčný KSP:
-PVC DN 160
+ale nový projekt má:
 
-Nový projekt:
-PVC DN 150
+PVC potrubie DN 200
 
-Výsledok:
-použi PVC DN 150,
-ale zachovaj spôsob kontroly,
-kritérium, početnosť, toleranciu
-a dokumentovanie z referenčného KSP,
-ak sú stále použiteľné.
-
-========================================
-3. ČO SA MÁ VYNECHAŤ
-========================================
-
-Riadok z referenčného KSP vynechaj iba vtedy,
-ak z projektových podkladov vyplýva,
-že sa daná práca, materiál alebo konštrukcia
-v novom projekte nevyskytuje.
-
-Nevynechávaj položku iba preto,
-aby bol KSP kratší.
-
-Nevynechávaj kontroly svojvoľne.
-
-========================================
-4. MINIMALIZÁCIA SKÚŠOK
-========================================
-
-Používateľ môže požadovať čo najmenší rozsah skúšok.
-
-To znamená:
-
-- nepridávaj žiadne skúšky navyše oproti referenčnému KSP
-- nepridávaj duplicitné skúšky
-- nepridávaj skúšky iba "pre istotu"
-- zachovaj skúšky z referenčného KSP,
-  ktoré sú relevantné pre daný rozsah prác
-
-Ak nie je jasné,
-či má byť konkrétna skúška na novom projekte vykonaná,
-NEVYMÝŠĽAJ odpoveď.
-
-V takom prípade:
-- zachovaj relevantný riadok
-- do poznámky uveď "OVERIŤ"
-
-========================================
-5. NORMY A PRÁVNE POŽIADAVKY
-========================================
-
-Normu alebo právny predpis môžeš uviesť iba vtedy,
-ak je:
-
-- uvedený v referenčnom KSP
-alebo
-- uvedený v projektových podkladoch
-
-Nevymýšľaj nové normy.
-Nevymýšľaj čísla noriem.
-Nevymýšľaj zákony.
-
-Ak norma nie je v podkladoch jednoznačne uvedená,
-použi hodnotu:
-
-"OVERIŤ"
-
-========================================
-6. MATERIÁLY A STAVEBNÉ VÝROBKY
-========================================
-
-Ak referenčný KSP obsahuje samostatnú kontrolu
-dokladov alebo vlastností stavebných výrobkov
-a rovnaký druh výrobku je použitý v novom projekte,
-zachovaj túto kontrolu.
-
-Konkrétny názov výrobku, materiál,
-rozmer alebo množstvo však prispôsob
-projektovým podkladom.
-
-========================================
-7. MNOŽSTVÁ
-========================================
-
-Množstvá čerpaj iba z projektových podkladov.
-
-Ak množstvo nevieš jednoznačne určiť,
 použi:
 
-"OVERIŤ"
+PVC potrubie DN 200
 
-Nevymýšľaj množstvá.
+ALE kontrolu, spôsob kontroly,
+kritérium, početnosť, toleranciu
+a dokumentovanie prevezmi
+z relevantného riadku referenčného KSP.
 
-========================================
-8. ZÁKAZ VYMÝŠĽANIA
-========================================
+===============================================
+E. MNOŽSTVO
+===============================================
 
-NESMIEŠ:
+Množstvo ber z:
 
-- vymýšľať nové skúšky
-- vymýšľať nové kontroly
-- vymýšľať nové normy
-- vymýšľať nové tolerancie
-- vymýšľať nové početnosti
-- vymýšľať nové procesy
-- vymýšľať nové materiály
-- vymýšľať nové množstvá
+1. rozpočtu
+2. technickej správy
+3. výkresov
 
-Ak chýba údaj:
-použi "OVERIŤ".
+Ak množstvo nie je jednoznačne dostupné,
+môže byť prázdne.
 
-========================================
-9. PORADIE RIADKOV
-========================================
+NEPÍŠ automaticky OVERIŤ.
 
-Poradie riadkov zachovaj čo najbližšie
-poradiu v referenčnom KSP.
+Nevymýšľaj množstvo.
 
-Výsledok má pôsobiť ako nový KSP
-vytvorený podľa referenčného KSP,
-nie ako úplne iný dokument.
+===============================================
+F. OVERIŤ - VEĽMI DÔLEŽITÉ
+===============================================
 
-========================================
-10. JSON VÝSTUP
-========================================
+Slovo OVERIŤ používaj VÝNIMOČNE.
+
+NESMIEŠ použiť OVERIŤ len preto,
+že si nie si istý prepisom údajov.
+
+Ak je údaj v referenčnom KSP,
+normálne ho prevezmi.
+
+Ak je údaj v projektovej dokumentácii,
+normálne ho použi.
+
+OVERIŤ použi predovšetkým v prípade,
+keď nemožno spoľahlivo rozhodnúť,
+či je konkrétna SKÚŠKA pre nový projekt
+povinná.
+
+===============================================
+G. SKÚŠKY - MINIMÁLNY POTREBNÝ ROZSAH
+===============================================
+
+Cieľom spoločnosti je:
+
+ČO NAJMENŠÍ POTREBNÝ ROZSAH SKÚŠOK,
+
+ale KSP musí zostať v súlade s požiadavkami,
+ktoré sa na projekt vzťahujú.
+
+Pre každú nákladovú alebo samostatnú skúšku
+z referenčného KSP posúď:
+
+1. Je relevantná pre nový projekt?
+
+2. Vyžaduje ju výslovne projektová dokumentácia?
+
+3. Vyžaduje ju právny predpis?
+
+4. Vyplýva jej povinnosť zo záväznej technickej
+   požiadavky alebo normy použitej pre dané práce?
+
+Ak potrebuješ preveriť aktuálne právne požiadavky,
+použi WEB SEARCH.
+
+Uprednostni oficiálne zdroje:
+
+- Slov-Lex
+- Úrad pre normalizáciu, metrológiu
+  a skúšobníctvo SR
+- Ministerstvo dopravy SR
+
+===============================================
+H. DÔLEŽITÉ - WEB NIE JE ZDROJOM NOVÉHO KSP
+===============================================
+
+Web search používaj iba na overenie,
+či je konkrétna skúška alebo kontrola
+povinná.
+
+WEB NESMIEŠ používať na:
+
+- vymýšľanie nových skúšok
+- pridávanie nových položiek,
+  ktoré nie sú v referenčnom KSP
+- vytváranie nových procesov
+
+Obsahový základ stále tvorí
+REFERENČNÝ KSP.
+
+===============================================
+I. ROZHODOVANIE O SKÚŠKE
+===============================================
+
+Ak je skúška:
+
+RELEVANTNÁ A POVINNÁ
+→ ponechaj ju.
+
+Ak je skúška:
+
+RELEVANTNÁ A VYŽADUJE JU PROJEKT
+→ ponechaj ju.
+
+Ak je v referenčnom KSP,
+ale nový projekt danú prácu vôbec neobsahuje
+→ vynechaj ju.
+
+Ak z dostupných zdrojov nemožno jednoznačne
+rozhodnúť o jej povinnosti
+→ ponechaj ju a do POZNÁMKY napíš:
+
+OVERIŤ POVINNOSŤ SKÚŠKY
+
+Nepíš OVERIŤ do ostatných polí.
+
+===============================================
+J. ZÁKON 133/2013 Z. Z.
+===============================================
+
+Ak referenčný KSP používa zákon č. 133/2013 Z. z.
+pri kontrole stavebných výrobkov alebo dokladov
+k stavebnému výrobku a na novom projekte
+sa používa zodpovedajúci stavebný výrobok,
+zachovaj tento typ kontroly.
+
+Neinterpretuj však zákon automaticky
+ako povinnosť vykonať každú skúšku na stavbe.
+
+===============================================
+K. NORMY
+===============================================
+
+Ak je konkrétna norma uvedená
+v relevantnom riadku referenčného KSP
+a ten istý typ práce je v novom projekte,
+prevezmi ju.
+
+NEPÍŠ namiesto nej OVERIŤ.
+
+Ak projektová dokumentácia obsahuje
+konkrétnejšiu alebo inú požiadavku
+pre nový projekt,
+použi projektovú dokumentáciu.
+
+Nevymýšľaj číslo normy z pamäti.
+
+===============================================
+L. POČETNOSŤ, TOLERANCIE A DOKUMENTOVANIE
+===============================================
+
+Tieto údaje majú primárne pochádzať
+z REFERENČNÉHO KSP.
+
+Ak sú v relevantnom riadku uvedené,
+PREVEZMI ICH.
+
+NENAHRÁDZAJ ich textom OVERIŤ.
+
+===============================================
+M. KONTROLY MATERIÁLOV
+===============================================
+
+Ak referenčný KSP obsahuje kontroly
+stavebných výrobkov, dokladov,
+vyhlásení o parametroch,
+certifikátov alebo dodacích dokladov
+a rovnaký druh materiálu sa používa
+v novom projekte,
+zachovaj príslušnú kontrolu.
+
+Konkrétny výrobok, materiál,
+DN a množstvo prispôsob novému projektu.
+
+===============================================
+N. PORADIE
+===============================================
+
+Zachovaj technologické a obsahové poradie
+čo najbližšie referenčnému KSP.
+
+Výsledok má pôsobiť,
+ako keby bol pôvodný referenčný KSP
+upravený pre nový projekt.
+
+Nesmie pôsobiť ako úplne nový KSP
+vytvorený nezávisle od referencie.
+
+===============================================
+O. ZAKÁZANÉ
+===============================================
+
+NESMIEŠ svojvoľne:
+
+- vymýšľať skúšky
+- vymýšľať kontroly
+- vymýšľať normy
+- vymýšľať zákony
+- vymýšľať tolerancie
+- vymýšľať početnosť
+- vymýšľať materiály
+- vymýšľať množstvá
+
+NEVYPĹŇAJ polovicu tabuľky slovom OVERIŤ.
+
+===============================================
+P. JSON VÝSTUP
+===============================================
 
 Výstup musí byť iba validné JSON POLE.
 
-Nevracaj vysvetlenie.
 Nevracaj markdown.
-Nevracaj objekt s kľúčom "rows".
+Nevracaj vysvetlenie.
+Nevracaj komentár mimo JSON.
+Nevracaj objekt s kľúčom rows.
 
-Správny tvar:
+Formát:
 
 [
   {
-    "poradie": "...",
-    "subproces": "...",
-    "mnozstvo": "...",
-    "druh_kontroly": "...",
-    "sposob_kontroly": "...",
-    "kriterium": "...",
-    "pocetnost": "...",
-    "celkovy_pocet": "...",
-    "zodpoveda": "...",
-    "vykona": "...",
-    "tolerancia": "...",
-    "dokumentovanie": "...",
-    "poznamka": "..."
+    "poradie": "",
+    "subproces": "",
+    "mnozstvo": "",
+    "druh_kontroly": "",
+    "sposob_kontroly": "",
+    "kriterium": "",
+    "pocetnost": "",
+    "celkovy_pocet": "",
+    "zodpoveda": "",
+    "vykona": "",
+    "tolerancia": "",
+    "dokumentovanie": "",
+    "poznamka": ""
   }
 ]
 
-Každý riadok musí obsahovať všetky tieto kľúče:
+Každý riadok musí obsahovať:
 
 poradie
 subproces
@@ -309,33 +497,27 @@ vykona
 tolerancia
 dokumentovanie
 poznamka
-
-Vráť iba JSON pole.
 """,
 
         input=text
     )
 
-    raw_result = response.output_text.strip()
-
-    if raw_result.startswith("```json"):
-        raw_result = raw_result[7:]
-
-    if raw_result.startswith("```"):
-        raw_result = raw_result[3:]
-
-    if raw_result.endswith("```"):
-        raw_result = raw_result[:-3]
+    raw_result = clean_json_response(
+        response.output_text
+    )
 
     parsed_result = json.loads(
-        raw_result.strip()
+        raw_result
     )
 
     # ------------------------------------------
-    # KONTROLA FORMÁTU
+    # AK AI PREDSA VRÁTI OBJEKT
     # ------------------------------------------
 
-    if isinstance(parsed_result, dict):
+    if isinstance(
+        parsed_result,
+        dict
+    ):
 
         for key in [
             "rows",
@@ -344,8 +526,8 @@ Vráť iba JSON pole.
             "data"
         ]:
 
-            possible_rows = parsed_result.get(
-                key
+            possible_rows = (
+                parsed_result.get(key)
             )
 
             if isinstance(
@@ -360,10 +542,13 @@ Vráť iba JSON pole.
         list
     ):
         raise ValueError(
-            "AI nevytvorila KSP ako zoznam riadkov."
+            "AI nevytvorila KSP "
+            "ako zoznam riadkov."
         )
 
-    clean_rows = []
+    # ------------------------------------------
+    # POVINNÉ STĹPCE
+    # ------------------------------------------
 
     required_fields = [
         "poradie",
@@ -380,6 +565,8 @@ Vráť iba JSON pole.
         "dokumentovanie",
         "poznamka"
     ]
+
+    clean_rows = []
 
     for item in parsed_result:
 
@@ -409,11 +596,16 @@ Vráť iba JSON pole.
 
     if not clean_rows:
         raise ValueError(
-            "AI nevytvorila žiadne použiteľné riadky KSP."
+            "AI nevytvorila žiadne "
+            "použiteľné riadky KSP."
         )
 
     return clean_rows
 
+
+# ==========================================================
+# HLAVIČKA PROJEKTU
+# ==========================================================
 
 def extract_project_metadata(text):
     """
@@ -425,6 +617,7 @@ def extract_project_metadata(text):
 
     response = client.responses.create(
         model="gpt-5.6-terra",
+
         instructions="""
 Si AI systém na kontrolu hlavičky stavebného KSP.
 
@@ -499,36 +692,15 @@ Primárny zdroj:
 
 Časť musí byť odlišná od názvu celej stavby.
 
-DÔLEŽITÉ:
 Ak údaj, ktorý by si chcel použiť ako ČASŤ,
 je rovnaký alebo veľmi podobný hodnote STAVBA,
 NESMIEŠ ho použiť ako ČASŤ.
 
-Príklad:
-
-STAVBA:
-"Jahodná - kanalizácia II. etapa"
-
-CENOVÁ PONUKA:
-"JAHODNÁ - kanalizácia II.etapa"
-
-Toto NIE JE ČASŤ.
-Je to iba rovnaký názov celej stavby.
-
-V takom prípade nastav:
+Ak samostatnú časť nenájdeš:
 
 value = "OVERIŤ"
 status = "OVERIŤ"
 source = "nenájdené"
-
-ČASŤ použi iba ak dokument jasne uvádza samostatnú časť,
-napríklad:
-
-"Časť: Kanalizačné prípojky"
-"Časť stavby: Stoková sieť"
-"Etapa: II. etapa"
-
-Samotný názov celej stavby nesmie byť použitý ako ČASŤ.
 
 
 ========================================
@@ -541,10 +713,6 @@ Hľadaj:
 - Zhotoviteľ
 - Dodávateľ
 - Zhotoviteľ diela
-
-Ak ZoD jasne uvádza firmu:
-status = ZHODA
-source = "ZoD"
 
 Nikdy nepouži firmu z mustry
 ani z referenčného KSP.
@@ -561,40 +729,6 @@ Hľadaj:
 - Investor
 - Stavebník
 - Objednávateľ diela
-
-Ak ZoD jasne uvádza subjekt:
-status = ZHODA
-source = "ZoD"
-
-
-========================================
-ZDROJ
-========================================
-
-Povolené hodnoty source:
-
-- "ZoD"
-- "technická správa"
-- "cenová ponuka / rozpočet"
-- "výkres"
-- "viac zdrojov"
-- "nenájdené"
-
-
-========================================
-STATUS
-========================================
-
-ZHODA
-- údaj je výslovne uvedený
-- nič mu neodporuje
-
-NEZHODA
-- dôveryhodné dokumenty si odporujú
-
-OVERIŤ
-- údaj nie je explicitne uvedený
-- alebo by sa musel domyslieť
 
 
 ========================================
@@ -620,50 +754,44 @@ Vráť iba validný JSON:
   "stavba": {
     "value": "...",
     "status": "ZHODA",
-    "source": "ZoD"
+    "source": "..."
   },
 
   "objekt": {
-    "value": "OVERIŤ",
-    "status": "OVERIŤ",
-    "source": "nenájdené"
+    "value": "...",
+    "status": "...",
+    "source": "..."
   },
 
   "cast": {
-    "value": "OVERIŤ",
-    "status": "OVERIŤ",
-    "source": "nenájdené"
+    "value": "...",
+    "status": "...",
+    "source": "..."
   },
 
   "zhotovitel": {
     "value": "...",
-    "status": "ZHODA",
-    "source": "ZoD"
+    "status": "...",
+    "source": "..."
   },
 
   "objednavatel": {
     "value": "...",
-    "status": "ZHODA",
-    "source": "ZoD"
+    "status": "...",
+    "source": "..."
   }
 }
 
 Vráť iba JSON.
 """,
+
         input=text
     )
 
-    raw_result = response.output_text.strip()
-
-    if raw_result.startswith("```json"):
-        raw_result = raw_result[7:]
-
-    if raw_result.startswith("```"):
-        raw_result = raw_result[3:]
-
-    if raw_result.endswith("```"):
-        raw_result = raw_result[:-3]
+    raw_result = clean_json_response(
+        response.output_text
+    )
 
     return json.loads(
-        raw_result.strip()
+        raw_result
     )
