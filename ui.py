@@ -68,6 +68,7 @@ def show_sidebar():
             [
                 "Nový projekt",
                 "Moje projekty",
+                "Detail projektu",
                 "KSP dokumenty",
                 "AI asistent"
             ]
@@ -82,6 +83,9 @@ def show_page(menu):
 
     elif menu == "Moje projekty":
         show_projects()
+
+    elif menu == "Detail projektu":
+    show_project_detail()
 
     elif menu == "KSP dokumenty":
         show_ksp_documents()
@@ -229,6 +233,103 @@ def show_projects():
     except Exception as e:
         st.error(
             f"Chyba pri načítaní projektov: {e}"
+        )
+
+def show_project_detail():
+    st.title("📂 Detail projektu")
+
+    try:
+        projects = get_projects()
+
+        if not projects:
+            st.info("Zatiaľ nemáš uložený žiadny projekt.")
+            return
+
+        project_names = [p["name"] for p in projects]
+
+        selected_name = st.selectbox(
+            "Vyber projekt",
+            project_names
+        )
+
+        selected_project = next(
+            p for p in projects
+            if p["name"] == selected_name
+        )
+
+        project_id = selected_project["id"]
+
+        st.markdown("### 📄 Existujúce podklady")
+
+        documents = get_project_documents(project_id)
+
+        if not documents:
+            st.info("K projektu zatiaľ nie sú uložené žiadne dokumenty.")
+        else:
+            for doc in documents:
+                st.write(
+                    f"- {doc['document_type']}: {doc['file_name']}"
+                )
+
+        st.markdown("### ➕ Doplniť podklady")
+
+        document_type = st.selectbox(
+            "Typ dokumentu",
+            [
+                "Technická správa",
+                "Rozpočet",
+                "Výkres",
+                "KSP šablóna / mustra",
+                "Referenčný KSP – kontroly a skúšky",
+                "Iný dokument"
+            ]
+        )
+
+        new_file = st.file_uploader(
+            "Nahraj nový súbor",
+            type=[
+                "pdf",
+                "docx",
+                "doc",
+                "xlsx",
+                "xls",
+                "dwg",
+                "dxf"
+            ]
+        )
+
+        if st.button(
+            "Uložiť nový podklad",
+            use_container_width=True
+        ):
+            if not new_file:
+                st.warning("Najprv vyber súbor.")
+                return
+
+            type_map = {
+                "Technická správa": "technical_report",
+                "Rozpočet": "budget",
+                "Výkres": "drawing",
+                "KSP šablóna / mustra": "ksp_template",
+                "Referenčný KSP – kontroly a skúšky": "reference_ksp",
+                "Iný dokument": "other"
+            }
+
+            upload_project_file(
+                project_id,
+                new_file,
+                type_map[document_type]
+            )
+
+            st.success(
+                f"Súbor '{new_file.name}' bol pridaný k projektu."
+            )
+
+            st.rerun()
+
+    except Exception as e:
+        st.error(
+            f"Chyba pri načítaní detailu projektu: {e}"
         )
 
 
