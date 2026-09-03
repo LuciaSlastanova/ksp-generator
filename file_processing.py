@@ -1,260 +1,217 @@
-import io
-import pandas as pd
-from pypdf import PdfReader
-from docx import Document
+def aggregate_budget_rows(classified_rows):
+    """
+    Sčíta položky rozpočtu, ktoré AI už predtým
+    semanticky zaradila.
 
+    AI rozhoduje, ktoré položky patria k sebe cez group_key.
+    Python robí iba presnú matematiku.
 
-# --------------------------------------------------
-# PDF
-# --------------------------------------------------
+    Zásady:
+    - spracujú sa iba include=True položky,
+    - sčítava sa podľa (group_key, unit),
+    - bez group_key alebo bez číselného quantity
+      položka zostane samostatne,
+    - zdrojové riadky sa zachovajú v source_rows.
+    """
 
-def extract_text_from_pdf(file_bytes):
-    reader = PdfReader(
-        io.BytesIO(file_bytes)
-    )
-
-    text_parts = []
-
-    for page_number, page in enumerate(
-        reader.pages,
-        start=1
+    if not isinstance(
+        classified_rows,
+        list
     ):
-        page_text = page.extract_text()
+        return []
 
-        if page_text:
-            text_parts.append(
-                f"\n--- STRANA: {page_number} ---\n"
-            )
+    grouped = {}
+    standalone = []
 
-            text_parts.append(
-                page_text
-            )
+    for item in classified_rows:
 
-    return "\n".join(
-        text_parts
-    )
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
 
-
-# --------------------------------------------------
-# DOCX
-# --------------------------------------------------
-
-def extract_text_from_docx(file_bytes):
-    document = Document(
-        io.BytesIO(file_bytes)
-    )
-
-    paragraphs = []
-
-    for paragraph in document.paragraphs:
-
-        if paragraph.text.strip():
-            paragraphs.append(
-                paragraph.text.strip()
-            )
-
-    return "\n".join(
-        paragraphs
-    )
-
-
-# --------------------------------------------------
-# EXCEL - SUROVÉ RIADKY ZO VŠETKÝCH HÁRKOV
-# --------------------------------------------------
-
-def extract_excel_rows(file_bytes):
-    """
-    Načíta všetky hárky Excelu bez predpokladu,
-    kde sa nachádza názov položky, MJ, množstvo
-    alebo cena.
-
-    Výsledok je zoznam riadkov:
-
-    [
-        {
-            "sheet": "SO 01",
-            "row_number": 12,
-            "values": ["1", "Výkop ryhy...", "m3", "120,5", ...]
-        },
-        ...
-    ]
-
-    Táto funkcia NIČ nesčítava a NIČ neklasifikuje.
-    Iba bezpečne vytiahne surové dáta.
-    """
-
-    excel_file = io.BytesIO(
-        file_bytes
-    )
-
-    sheets = pd.read_excel(
-        excel_file,
-        sheet_name=None,
-        header=None,
-        dtype=object
-    )
-
-    rows = []
-
-    for sheet_name, dataframe in sheets.items():
-
-        dataframe = dataframe.fillna(
-            ""
+        include = item.get(
+            "include",
+            False
         )
 
-        for row_number, row in enumerate(
-            dataframe.itertuples(
-                index=False,
-                name=None
-            ),
-            start=1
+        if isinstance(
+            include,
+            str
         ):
-
-            values = []
-
-            has_value = False
-
-            for value in row:
-
-                if value is None:
-                    text_value = ""
-
-                else:
-                    text_value = str(
-                        value
-                    ).strip()
-
-                if text_value:
-                    has_value = True
-
-                values.append(
-                    text_value
-                )
-
-            if not has_value:
-                continue
-
-            rows.append(
-                {
-                    "sheet": str(
-                        sheet_name
-                    ),
-                    "row_number": row_number,
-                    "values": values
+            include = (
+                include.strip().lower()
+                in {
+                    "true",
+                    "1",
+                    "yes",
+                    "áno",
+                    "ano"
                 }
             )
 
-    return rows
-
-
-# --------------------------------------------------
-# EXCEL - TEXT PRE AI
-# --------------------------------------------------
-
-def extract_text_from_excel(file_bytes):
-    """
-    Prevedie Excel na text tak, aby AI videla:
-    - názov hárku
-    - číslo pôvodného riadku
-    - všetky neprázdne hodnoty riadku
-
-    Dôležité:
-    nič tu nefiltrujeme podľa cien,
-    pretože rôzne cenové ponuky majú
-    rôznu štruktúru.
-
-    O tom, čo je položka, MJ, množstvo,
-    cena alebo medzisúčet, rozhodne neskôr AI.
-    """
-
-    rows = extract_excel_rows(
-        file_bytes
-    )
-
-    if not rows:
-        return ""
-
-    text_parts = []
-
-    current_sheet = None
-
-    for item in rows:
-
-        sheet_name = item[
-            "sheet"
-        ]
-
-        if sheet_name != current_sheet:
-
-            current_sheet = sheet_name
-
-            text_parts.append(
-                f"\n--- LIST: {sheet_name} ---\n"
-            )
-
-        non_empty_values = [
-            value
-            for value in item["values"]
-            if value
-        ]
-
-        if not non_empty_values:
+        if not include:
             continue
 
-        row_text = " | ".join(
-            non_empty_values
+        group_key = str(
+            item.get(
+                "group_key",
+                ""
+            )
+            or ""
+        ).strip()
+
+        unit = str(
+            item.get(
+                "unit",
+                ""
+            )
+            or ""
+        ).strip()
+
+        quantity = item.get(
+            "quantity"
         )
 
-        text_parts.append(
-            f"RIADOK {item['row_number']}: "
-            f"{row_text}"
+        source_row = {
+            "sheet": item.get(
+                "sheet",
+                ""
+            ),
+            "row_number": item.get(
+                "row_number",
+                ""
+            )
+        }
+
+        is_number = isinstance(
+            quantity,
+            (
+                int,
+                float
+            )
+        ) and not isinstance(
+            quantity,
+            bool
         )
 
-    return "\n".join(
-        text_parts
-    )
+        if (
+            group_key
+            and is_number
+        ):
+            key = (
+                group_key,
+                unit.lower()
+            )
 
+            if key not in grouped:
+                grouped[key] = {
+                    "group_key": group_key,
+                    "item_name": item.get(
+                        "item_name",
+                        ""
+                    ),
+                    "category": item.get(
+                        "category",
+                        ""
+                    ),
+                    "unit": unit,
+                    "quantity": 0.0,
+                    "dimension": item.get(
+                        "dimension",
+                        ""
+                    ),
+                    "material": item.get(
+                        "material",
+                        ""
+                    ),
+                    "source_rows": []
+                }
 
-# --------------------------------------------------
-# VŠEOBECNÉ SPRACOVANIE SÚBORU
-# --------------------------------------------------
+            grouped[key][
+                "quantity"
+            ] += float(
+                quantity
+            )
 
-def extract_text_from_file(
-    file_name,
-    file_bytes
-):
-    extension = (
-        file_name
-        .lower()
-        .split(".")[-1]
-    )
+            grouped[key][
+                "source_rows"
+            ].append(
+                source_row
+            )
 
-    if extension == "pdf":
-        return extract_text_from_pdf(
-            file_bytes
+        else:
+            standalone.append(
+                {
+                    "group_key": group_key,
+                    "item_name": item.get(
+                        "item_name",
+                        ""
+                    ),
+                    "category": item.get(
+                        "category",
+                        ""
+                    ),
+                    "unit": unit,
+                    "quantity": quantity,
+                    "dimension": item.get(
+                        "dimension",
+                        ""
+                    ),
+                    "material": item.get(
+                        "material",
+                        ""
+                    ),
+                    "source_rows": [
+                        source_row
+                    ]
+                }
+            )
+
+    result = list(
+        grouped.values()
+    ) + standalone
+
+    def sort_key(item):
+
+        source_rows = item.get(
+            "source_rows",
+            []
         )
 
-    if extension == "docx":
-        return extract_text_from_docx(
-            file_bytes
+        if not source_rows:
+            return (
+                "",
+                999999999
+            )
+
+        first = source_rows[0]
+
+        row_number = first.get(
+            "row_number",
+            999999999
         )
 
-    if extension in [
-        "xlsx",
-        "xls"
-    ]:
-        return extract_text_from_excel(
-            file_bytes
-        )
+        try:
+            row_number = int(
+                row_number
+            )
+        except Exception:
+            row_number = 999999999
 
-    if extension == "doc":
         return (
-            "Formát .doc zatiaľ nie je možné "
-            "automaticky spracovať. "
-            "Použi .docx alebo PDF."
+            str(
+                first.get(
+                    "sheet",
+                    ""
+                )
+            ),
+            row_number
         )
 
-    return (
-        f"Nepodporovaný formát súboru: "
-        f"{extension}"
+    result.sort(
+        key=sort_key
     )
+
+    return result
