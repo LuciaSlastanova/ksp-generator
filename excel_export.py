@@ -242,7 +242,10 @@ def normalize_ksp_rows(ksp_rows):
             "vykona",
             "tolerancia",
             "dokumentovanie",
-            "poznamka"
+            "poznamka",
+            "status",
+            "status_reason",
+            "legal_basis"
         ]:
 
             value = item.get(
@@ -1238,6 +1241,130 @@ def build_output_rows(
     return current_excel_row
 
 
+
+# ==========================================================
+# ODBORNÁ KONTROLA - FAREBNÉ OZNAČENIE
+# ==========================================================
+
+def apply_review_status(
+    worksheet,
+    row,
+    item
+):
+    """
+    KEEP              -> bez zmeny štýlu mustry
+    REMOVE_CANDIDATE  -> svetločervené zvýraznenie A:N
+    VERIFY            -> svetložlté zvýraznenie A:N
+
+    Status sa nemení na automatické vymazanie.
+    Používateľ vždy vidí riadok v Exceli.
+    """
+
+    status = str(
+        item.get(
+            "status",
+            "KEEP"
+        )
+        or "KEEP"
+    ).strip().upper()
+
+    reason = str(
+        item.get(
+            "status_reason",
+            ""
+        )
+        or ""
+    ).strip()
+
+    legal_basis = str(
+        item.get(
+            "legal_basis",
+            ""
+        )
+        or ""
+    ).strip()
+
+    if status == "REMOVE_CANDIDATE":
+        fill_color = "F4CCCC"
+
+    elif status == "VERIFY":
+        fill_color = "FFF2CC"
+
+    else:
+        return
+
+    for column in range(
+        1,
+        15
+    ):
+        cell = worksheet.cell(
+            row=row,
+            column=column
+        )
+
+        if isinstance(
+            cell,
+            MergedCell
+        ):
+            continue
+
+        cell.fill = copy(
+            cell.fill
+        )
+
+        # PatternFill importujeme lokálne, aby sme nemenili
+        # ostatné štýly mustry.
+        from openpyxl.styles import PatternFill
+
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor=fill_color
+        )
+
+    # Dôvod uložíme aj do Poznámky, aby bol viditeľný.
+    note_parts = []
+
+    existing_note = str(
+        item.get(
+            "poznamka",
+            ""
+        )
+        or ""
+    ).strip()
+
+    if existing_note:
+        note_parts.append(
+            existing_note
+        )
+
+    if status == "REMOVE_CANDIDATE":
+        note_parts.append(
+            "NAVRHNUTÉ NA VYRADENIE"
+        )
+
+    elif status == "VERIFY":
+        note_parts.append(
+            "OVERIŤ POVINNOSŤ"
+        )
+
+    if reason:
+        note_parts.append(
+            reason
+        )
+
+    if legal_basis:
+        note_parts.append(
+            "Podklad: " + legal_basis
+        )
+
+    worksheet.cell(
+        row=row,
+        column=14
+    ).value = " | ".join(
+        note_parts
+    )
+
+
 # ==========================================================
 # TVORBA EXCELU
 # ==========================================================
@@ -1674,6 +1801,12 @@ def create_ksp_excel(
                     row=current_excel_row,
                     column=column_number
                 ).value = value
+
+            apply_review_status(
+                ksp_worksheet,
+                current_excel_row,
+                row_item
+            )
 
             current_excel_row += 1
 
