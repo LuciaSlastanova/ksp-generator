@@ -5,3 +5,4 @@ openpyxl
 python-docx
 pypdf
 supabase
+PyPDF2
