@@ -669,14 +669,93 @@ def _extract_critical_parameters(description):
     )
 
 
+def _remove_ksp_irrelevant_classifiers(text):
+    """
+    Odstráni iba klasifikátory, ktoré v rozpočte často
+    menia cenu, ale spravidla nemenia KSP kontrolu.
+
+    Je to všeobecné pravidlo pre zemné práce:
+    pri výkope/hĺbení ignorujeme oceňovaciu triedu horniny,
+    ale zachovávame typ práce, šírku, rozmery a MJ.
+
+    Príklady, ktoré sa zjednotia:
+    - horn.3
+    - hor 4
+    - hornina tr. 3
+    - v hornine 4
+
+    Toto sa aplikuje LEN na zemné práce typu výkop/hĺbenie,
+    nie na všetky stavebné položky.
+    """
+
+    result = _normalize_text(text)
+
+    is_earth_excavation = any(
+        token in result
+        for token in [
+            "vykop",
+            "hlbenie",
+            "hlbenia",
+            "ryhy",
+            "jamy",
+            "jám",
+            "zarezov",
+        ]
+    )
+
+    if not is_earth_excavation:
+        return result
+
+    patterns = [
+        r"\bhorn\.?\s*\d+\b",
+        r"\bhor\s*\d+\b",
+        r"\bhornina\s*(?:tr\.?|triedy)?\s*\d+\b",
+        r"\bhornine\s*(?:tr\.?|triedy)?\s*\d+\b",
+        r"\bz\s*horniny\s*(?:tr\.?|triedy)?\s*\d+\b",
+        r"\bv\s*hornine\s*(?:tr\.?|triedy)?\s*\d+\b",
+    ]
+
+    for pattern in patterns:
+        result = re.sub(
+            pattern,
+            "",
+            result,
+            flags=re.IGNORECASE
+        )
+
+    result = re.sub(
+        r"\s+",
+        " ",
+        result
+    ).strip(" ,;-")
+
+    return result
+
+
 def _description_signature(description):
     """
-    Vráti textový podpis po odstránení iba
-    oceňovacích pásiem.
+    Vráti všeobecný technický podpis položky pre KSP.
+
+    Odstraňuje:
+    - cenové pásma,
+    - pri zemných prácach oceňovaciu triedu horniny.
+
+    Zachováva:
+    - typ práce,
+    - šírku/rozmer,
+    - DN, SN, PN,
+    - triedu betónu,
+    - hrúbku,
+    - materiál,
+    - ostatné technické parametre.
     """
 
     text = _remove_pricing_bands(
         description
+    )
+
+    text = _remove_ksp_irrelevant_classifiers(
+        text
     )
 
     # drobné typografické rozdiely
