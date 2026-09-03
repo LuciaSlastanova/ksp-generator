@@ -85,6 +85,481 @@ POŽIADAVKA:
 
 
 # ==========================================================
+# AI KLASIFIKÁCIA RIADKOV CENOVEJ PONUKY
+# ==========================================================
+
+def classify_budget_rows(text):
+    """
+    AI prečíta surové riadky zo všetkých hárkov cenovej ponuky
+    a určí, ktoré riadky sú skutočné položky a čo znamenajú.
+
+    Táto funkcia NESČÍTAVA množstvá.
+    Sčítanie spraví neskôr Python až podľa group_key + MJ.
+    """
+
+    client = get_openai_client()
+
+    response = client.responses.create(
+        model="gpt-5.6-terra",
+        instructions="""
+Si AI systém na analýzu stavebných cenových ponúk a rozpočtov.
+
+Dostaneš text vytvorený z Excelu.
+Text obsahuje všetky hárky a pôvodné riadky napríklad:
+
+--- LIST: SO 01 ---
+RIADOK 12: 1 | Výkop ryhy | m3 | 120,50 | 15,20 | 1831,00
+
+TVOJOU ÚLOHOU JE IBA POCHOPIŤ RIADKY.
+NESMIEŠ TVORIŤ KSP.
+NESMIEŠ SČÍTAVAŤ MNOŽSTVÁ.
+
+========================================
+1. ROZPOZNAJ SKUTOČNÚ POLOŽKU
+========================================
+
+Každý riadok označ:
+
+include = true
+
+iba ak ide o skutočnú položku práce, materiálu,
+výrobku, montáže, skúšky alebo inej vecnej položky
+relevantnej pre realizáciu stavby.
+
+Riadky ako:
+- názov stavby
+- názov objektu
+- nadpis
+- medzisúčet
+- súčet
+- cena spolu
+- DPH
+- rekapitulácia
+- poznámka
+- prázdny technický riadok
+- hlavička tabuľky
+
+označ:
+
+include = false
+
+========================================
+2. NÁZOV POLOŽKY
+========================================
+
+Do item_name daj technický názov položky bez ceny.
+
+Nevkladaj:
+- jednotkovú cenu
+- cenu spolu
+- DPH
+- poradové číslo
+- kód položky, ak nie je súčasťou technického významu
+
+Zachovaj však technicky dôležité údaje:
+- materiál
+- DN
+- priemer
+- rozmer
+- triedu
+- SN
+- typ
+- hrúbku
+- druh konštrukcie
+
+========================================
+3. KATEGÓRIA
+========================================
+
+category musí byť jedna z hodnôt:
+
+- "praca"
+- "material"
+- "vyrobok"
+- "montaz"
+- "skuska"
+- "ine"
+
+Vyber podľa významu položky.
+
+========================================
+4. MNOŽSTVO A MJ
+========================================
+
+Zisti:
+
+unit
+quantity
+
+quantity musí obsahovať iba množstvo,
+nie cenu.
+
+Ak je množstvo napríklad:
+
+"120,50"
+
+vráť:
+
+120.5
+
+ako číslo.
+
+Ak množstvo nemožno jednoznačne určiť:
+quantity = null
+
+unit je napríklad:
+- m
+- m2
+- m3
+- ks
+- t
+- kg
+- hod
+- súbor
+- komplet
+
+Ak MJ nemožno jednoznačne určiť:
+unit = ""
+
+NEZAMEŇ cenu za množstvo.
+
+Ak je v riadku viac čísel,
+využi názvy stĺpcov, susedné riadky,
+kontext hárku a typické členenie rozpočtu.
+
+========================================
+5. DN / ROZMER
+========================================
+
+Do dimension daj iba technicky relevantný rozmer,
+napríklad:
+
+"DN160"
+"DN300"
+"400x400"
+"hr. 150 mm"
+"SN8"
+
+Ak relevantný rozmer nie je:
+dimension = ""
+
+========================================
+6. MATERIÁL
+========================================
+
+Do material daj základný materiál alebo typ výrobku,
+ak ho možno určiť, napríklad:
+
+"PVC-U"
+"PP"
+"PE100"
+"betón"
+"štrkopiesok"
+"drvené kamenivo"
+
+Ak ho nemožno určiť:
+material = ""
+
+========================================
+7. GROUP_KEY - NA SČÍTANIE
+========================================
+
+group_key je veľmi dôležitý.
+
+Má označovať významovo rovnakú položku,
+ktorú bude možné neskôr sčítať s rovnakými položkami
+z iných hárkov.
+
+group_key musí byť krátky, stabilný a technický.
+
+Príklady:
+
+"potrubie_pvc_dn160"
+"potrubie_pvc_dn300"
+"lozko_strkopiesok"
+"obsyp_potrubia"
+"vykop_ryhy"
+"zasyp_ryhy"
+"revizna_sachta_dn400"
+"tlakova_skuska_pe_dn90"
+
+Rovnaké významové položky pomenované rozdielne
+majú dostať rovnaký group_key.
+
+ALE NESMIEŠ spojiť položky, ktoré sa technicky líšia.
+
+NESMIEŠ dať rovnaký group_key pre:
+- DN160 a DN200
+- m a m3
+- PVC a PE, ak ide o odlišný výrobok
+- potrubie a jeho montáž, ak sú samostatnými položkami
+- výkop a zásyp
+- materiál a skúšku
+
+Ak si nie si istý, vytvor radšej odlišný group_key.
+Nesprávne sčítanie je horšie ako ponechanie dvoch skupín.
+
+========================================
+8. CENY IGNORUJ
+========================================
+
+Nevracaj:
+- jednotkovú cenu
+- cenu spolu
+- sadzbu
+- DPH
+- obchodnú maržu
+
+Ceny nie sú pre KSP potrebné.
+
+========================================
+9. PÔVOD RIADKU
+========================================
+
+Zachovaj:
+
+sheet
+row_number
+
+presne podľa vstupného textu.
+
+========================================
+10. VÝSTUP
+========================================
+
+Vráť iba validné JSON pole.
+
+Každý prvok musí mať presne tieto kľúče:
+
+sheet
+row_number
+include
+item_name
+category
+unit
+quantity
+dimension
+material
+group_key
+reason
+
+Príklad:
+
+[
+  {
+    "sheet": "SO 01",
+    "row_number": 12,
+    "include": true,
+    "item_name": "PVC-U kanalizačné potrubie DN160 SN8",
+    "category": "material",
+    "unit": "m",
+    "quantity": 120.5,
+    "dimension": "DN160",
+    "material": "PVC-U",
+    "group_key": "potrubie_pvc_dn160",
+    "reason": "Skutočná materiálová položka"
+  },
+  {
+    "sheet": "SO 01",
+    "row_number": 2,
+    "include": false,
+    "item_name": "",
+    "category": "ine",
+    "unit": "",
+    "quantity": null,
+    "dimension": "",
+    "material": "",
+    "group_key": "",
+    "reason": "Hlavička tabuľky"
+  }
+]
+
+Vráť iba JSON.
+""",
+        input=text
+    )
+
+    raw_result = clean_json_response(
+        response.output_text
+    )
+
+    parsed_result = json.loads(
+        raw_result
+    )
+
+    if isinstance(
+        parsed_result,
+        dict
+    ):
+        for key in [
+            "rows",
+            "items",
+            "data",
+            "budget_rows"
+        ]:
+            value = parsed_result.get(
+                key
+            )
+
+            if isinstance(
+                value,
+                list
+            ):
+                parsed_result = value
+                break
+
+    if not isinstance(
+        parsed_result,
+        list
+    ):
+        raise ValueError(
+            "AI nevytvorila klasifikáciu "
+            "cenovej ponuky ako zoznam riadkov."
+        )
+
+    clean_rows = []
+
+    required_fields = [
+        "sheet",
+        "row_number",
+        "include",
+        "item_name",
+        "category",
+        "unit",
+        "quantity",
+        "dimension",
+        "material",
+        "group_key",
+        "reason"
+    ]
+
+    for item in parsed_result:
+
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
+
+        clean_item = {}
+
+        for field in required_fields:
+            clean_item[field] = item.get(
+                field
+            )
+
+        clean_item["sheet"] = (
+            str(
+                clean_item.get("sheet") or ""
+            ).strip()
+        )
+
+        try:
+            clean_item["row_number"] = int(
+                clean_item.get("row_number")
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+            clean_item["row_number"] = None
+
+        clean_item["include"] = bool(
+            clean_item.get("include")
+        )
+
+        clean_item["item_name"] = (
+            str(
+                clean_item.get("item_name") or ""
+            ).strip()
+        )
+
+        clean_item["category"] = (
+            str(
+                clean_item.get("category") or "ine"
+            ).strip()
+        )
+
+        clean_item["unit"] = (
+            str(
+                clean_item.get("unit") or ""
+            ).strip()
+        )
+
+        quantity = clean_item.get(
+            "quantity"
+        )
+
+        if isinstance(
+            quantity,
+            str
+        ):
+            normalized_quantity = (
+                quantity
+                .replace(" ", "")
+                .replace(",", ".")
+            )
+
+            try:
+                quantity = float(
+                    normalized_quantity
+                )
+
+            except ValueError:
+                quantity = None
+
+        elif not isinstance(
+            quantity,
+            (
+                int,
+                float
+            )
+        ):
+            quantity = None
+
+        clean_item["quantity"] = (
+            quantity
+        )
+
+        clean_item["dimension"] = (
+            str(
+                clean_item.get("dimension") or ""
+            ).strip()
+        )
+
+        clean_item["material"] = (
+            str(
+                clean_item.get("material") or ""
+            ).strip()
+        )
+
+        clean_item["group_key"] = (
+            str(
+                clean_item.get("group_key") or ""
+            ).strip()
+        )
+
+        clean_item["reason"] = (
+            str(
+                clean_item.get("reason") or ""
+            ).strip()
+        )
+
+        clean_rows.append(
+            clean_item
+        )
+
+    if not clean_rows:
+        raise ValueError(
+            "AI nevytvorila žiadne "
+            "použiteľné riadky cenovej ponuky."
+        )
+
+    return clean_rows
+
+
+# ==========================================================
 # GENEROVANIE RIADKOV KSP
 # ==========================================================
 
