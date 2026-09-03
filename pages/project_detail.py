@@ -12,13 +12,13 @@ from database import (
 
 from file_processing import (
     extract_text_from_file,
-    aggregate_budget_rows
+    process_budget_python,
+    merge_aggregated_budget_rows
 )
 
 from ai import (
     generate_ksp_rows,
-    extract_project_metadata,
-    classify_budget_rows
+    extract_project_metadata
 )
 
 from excel_export import create_ksp_excel
@@ -229,10 +229,6 @@ def show_project_detail():
 
         excel_key = (
             f"ksp_excel_{project_id}"
-        )
-
-        classified_budget_key = (
-            f"classified_budget_{project_id}"
         )
 
         aggregated_budget_key = (
@@ -513,11 +509,6 @@ def show_project_detail():
             )
 
             if selected_document_type == "budget":
-                st.session_state.pop(
-                    classified_budget_key,
-                    None
-                )
-
                 st.session_state.pop(
                     aggregated_budget_key,
                     None
@@ -876,58 +867,58 @@ def show_project_detail():
             else:
 
                 st.markdown(
-                    "#### Krok A – spracovať cenovú ponuku"
+                    "#### Krok A – spočítať cenovú ponuku"
                 )
 
                 st.caption(
-                    "Tento krok spraví iba prvé AI volanie: "
-                    "AI rozpozná položky zo všetkých hárkov "
-                    "a Python ich potom sčíta. "
-                    "KSP sa ešte negeneruje."
+                    "Tento krok je 100 % Python. "
+                    "Nevolá OpenAI API a nespotrebúva API kredit."
                 )
 
                 if st.button(
-                    "1️⃣ Spracovať cenovú ponuku",
+                    "1️⃣ Spočítať cenovú ponuku bez AI",
                     use_container_width=True
                 ):
 
-                    with st.spinner(
-                        "Čítam všetky hárky cenovej ponuky..."
-                    ):
-
-                        budget_text = build_budget_text(
-                            budget_documents
-                        )
+                    aggregated_lists = []
 
                     with st.spinner(
-                        "AI rozpoznáva práce, materiály, "
-                        "MJ a množstvá v cenovej ponuke..."
+                        "Čítam všetky detailné hárky "
+                        "a presne sčítavam množstvá..."
                     ):
 
-                        classified_budget_rows = (
-                            classify_budget_rows(
-                                budget_text
+                        for budget_doc in budget_documents:
+
+                            budget_bytes = (
+                                download_project_file(
+                                    budget_doc["file_path"]
+                                )
+                            )
+
+                            one_budget_result = (
+                                process_budget_python(
+                                    budget_bytes
+                                )
+                            )
+
+                            aggregated_lists.append(
+                                one_budget_result
+                            )
+
+                        aggregated_budget_rows = (
+                            merge_aggregated_budget_rows(
+                                aggregated_lists
                             )
                         )
-
-                    aggregated_budget_rows = (
-                        aggregate_budget_rows(
-                            classified_budget_rows
-                        )
-                    )
 
                     if not aggregated_budget_rows:
 
                         st.error(
                             "Z cenovej ponuky sa nepodarilo "
-                            "získať použiteľné položky."
+                            "načítať tabuľku Kód / Popis / MJ / Množstvo."
                         )
 
                         return
-
-                    st.session_state[
-                        classified_budget_key
-                    ] = classified_budget_rows
 
                     st.session_state[
                         aggregated_budget_key
@@ -944,8 +935,8 @@ def show_project_detail():
                     )
 
                     st.success(
-                        "Cenová ponuka bola spracovaná. "
-                        "Najprv skontroluj súčty nižšie."
+                        "Cenová ponuka bola spočítaná bez AI. "
+                        "Skontroluj výsledky nižšie."
                     )
 
                 aggregated_budget_rows = (
@@ -962,9 +953,8 @@ def show_project_detail():
                     )
 
                     st.info(
-                        "Toto je medzivýsledok po prvom AI volaní. "
-                        "Zobrazenie tejto tabuľky už žiadne ďalšie "
-                        "AI volanie nerobí."
+                        "Táto tabuľka vznikla iba v Pythone. "
+                        "Zobrazenie ani sčítanie nepoužíva OpenAI API."
                     )
 
                     budget_preview_rows = []
@@ -986,34 +976,40 @@ def show_project_detail():
 
                         budget_preview_rows.append(
                             {
-                                "group_key": item.get(
-                                    "group_key",
-                                    ""
-                                ),
-                                "Položka": item.get(
-                                    "item_name",
-                                    ""
-                                ),
-                                "Kategória": item.get(
-                                    "category",
-                                    ""
-                                ),
-                                "Materiál": item.get(
-                                    "material",
-                                    ""
-                                ),
-                                "Rozmer / DN": item.get(
-                                    "dimension",
-                                    ""
-                                ),
-                                "Množstvo": item.get(
-                                    "quantity",
-                                    ""
-                                ),
-                                "MJ": item.get(
-                                    "unit",
-                                    ""
-                                ),
+                                "group_key":
+                                    item.get(
+                                        "group_key",
+                                        ""
+                                    ),
+                                "Položka":
+                                    item.get(
+                                        "item_name",
+                                        ""
+                                    ),
+                                "Materiál":
+                                    item.get(
+                                        "material",
+                                        ""
+                                    ),
+                                "Rozmer / DN":
+                                    item.get(
+                                        "dimension",
+                                        ""
+                                    ),
+                                "Množstvo":
+                                    item.get(
+                                        "quantity",
+                                        ""
+                                    ),
+                                "MJ":
+                                    item.get(
+                                        "unit",
+                                        ""
+                                    ),
+                                "Počet zdrojových riadkov":
+                                    len(
+                                        source_rows
+                                    ),
                                 "Zdrojové hárky / riadky":
                                     source_text
                             }
@@ -1026,9 +1022,9 @@ def show_project_detail():
                     )
 
                     st.caption(
-                        "Skontroluj hlavne Množstvo, MJ a "
-                        "Zdrojové hárky / riadky. "
-                        "Ak tu sú súčty zlé, druhý krok nespúšťaj."
+                        "Pre Jahodnú majú napríklad vyjsť: "
+                        "lôžko 504,618 m³, obsyp 2 563,199 m³, "
+                        "zásyp 8 086,263 m³, KARI 6 526,935 m²."
                     )
 
                     st.markdown(
@@ -1036,8 +1032,8 @@ def show_project_detail():
                     )
 
                     st.caption(
-                        "Až toto tlačidlo spustí druhé AI volanie "
-                        "na priradenie agregovaného rozpočtu "
+                        "Až toto tlačidlo spustí AI volanie "
+                        "na priradenie spočítaných položiek "
                         "k referenčnému KSP."
                     )
 
@@ -1104,10 +1100,7 @@ def show_project_detail():
                             ]
                         }
 
-                        if (
-                            current_header
-                            != normalized_saved_header
-                        ):
+                        if current_header != normalized_saved_header:
 
                             st.warning(
                                 "Hlavičku si zmenila. "
@@ -1124,8 +1117,7 @@ def show_project_detail():
                                         field
                                     ]
                             }
-                            for field
-                            in normalized_saved_header
+                            for field in normalized_saved_header
                         }
 
                         aggregated_budget_text = (
