@@ -4,12 +4,32 @@ from copy import copy
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
-from openpyxl.utils import get_column_letter
 
 
-# --------------------------------------------------
+# ==========================================================
+# ZÁKLADNÉ MAPOVANIE KSP
+# ==========================================================
+
+COLUMN_MAP = {
+    "poradie": 1,          # A
+    "subproces": 2,        # B:C
+    "mnozstvo": 4,         # D
+    "druh_kontroly": 5,    # E
+    "sposob_kontroly": 6,  # F
+    "kriterium": 7,        # G
+    "pocetnost": 8,        # H
+    "celkovy_pocet": 9,    # I
+    "zodpoveda": 10,       # J
+    "vykona": 11,          # K
+    "tolerancia": 12,      # L
+    "dokumentovanie": 13,  # M
+    "poznamka": 14         # N
+}
+
+
+# ==========================================================
 # POMOCNÉ FUNKCIE
-# --------------------------------------------------
+# ==========================================================
 
 def normalize_text(value):
     if value is None:
@@ -21,18 +41,6 @@ def normalize_text(value):
         .lower()
         .replace(":", "")
         .replace("\n", " ")
-    )
-
-
-def is_empty_metadata_value(value):
-    if value is None:
-        return True
-
-    value = str(value).strip()
-
-    return (
-        not value
-        or value.upper() == "OVERIŤ"
     )
 
 
@@ -86,10 +94,9 @@ def copy_cell_style(
     ):
         return
 
-    if source_cell.has_style:
-        target_cell._style = copy(
-            source_cell._style
-        )
+    target_cell._style = copy(
+        source_cell._style
+    )
 
     target_cell.font = copy(
         source_cell.font
@@ -116,83 +123,47 @@ def copy_cell_style(
     )
 
 
-def capture_style(
-    cell
+def copy_row_style(
+    worksheet,
+    source_row,
+    target_row,
+    start_column=1,
+    end_column=14
 ):
-    if cell is None:
-        return None
-
-    if isinstance(
-        cell,
-        MergedCell
+    for column in range(
+        start_column,
+        end_column + 1
     ):
-        return None
 
-    return {
-        "style": copy(cell._style),
-        "font": copy(cell.font),
-        "fill": copy(cell.fill),
-        "border": copy(cell.border),
-        "alignment": copy(cell.alignment),
-        "protection": copy(cell.protection),
-        "number_format": cell.number_format
-    }
+        source_cell = get_real_cell(
+            worksheet,
+            source_row,
+            column
+        )
 
+        target_cell = worksheet.cell(
+            row=target_row,
+            column=column
+        )
 
-def apply_style(
-    cell,
-    style_data
-):
-    if cell is None:
-        return
+        copy_cell_style(
+            source_cell,
+            target_cell
+        )
 
-    if style_data is None:
-        return
-
-    if isinstance(
-        cell,
-        MergedCell
-    ):
-        return
-
-    cell._style = copy(
-        style_data["style"]
+    source_height = (
+        worksheet
+        .row_dimensions[source_row]
+        .height
     )
 
-    cell.font = copy(
-        style_data["font"]
-    )
+    if source_height is not None:
+        worksheet.row_dimensions[
+            target_row
+        ].height = source_height
 
-    cell.fill = copy(
-        style_data["fill"]
-    )
-
-    cell.border = copy(
-        style_data["border"]
-    )
-
-    cell.alignment = copy(
-        style_data["alignment"]
-    )
-
-    cell.protection = copy(
-        style_data["protection"]
-    )
-
-    cell.number_format = (
-        style_data["number_format"]
-    )
-
-
-# --------------------------------------------------
-# KONTROLA RIADKOV Z AI
-# --------------------------------------------------
 
 def normalize_ksp_rows(ksp_rows):
-    """
-    Zabezpečí, že do Excelu ide vždy
-    zoznam dictionary objektov.
-    """
 
     if isinstance(
         ksp_rows,
@@ -210,23 +181,14 @@ def normalize_ksp_rows(ksp_rows):
         if text.endswith("```"):
             text = text[:-3]
 
-        try:
-            ksp_rows = json.loads(
-                text.strip()
-            )
-
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                "AI vrátila text, ktorý nie je "
-                "platný JSON pre KSP."
-            ) from e
+        ksp_rows = json.loads(
+            text.strip()
+        )
 
     if isinstance(
         ksp_rows,
         dict
     ):
-
-        found_rows = None
 
         for key in [
             "rows",
@@ -243,26 +205,8 @@ def normalize_ksp_rows(ksp_rows):
                 value,
                 list
             ):
-                found_rows = value
+                ksp_rows = value
                 break
-
-        if found_rows is None:
-
-            if (
-                "subproces"
-                in ksp_rows
-            ):
-                found_rows = [
-                    ksp_rows
-                ]
-
-        if found_rows is None:
-            raise ValueError(
-                "AI vrátila JSON objekt, "
-                "ale nenašiel sa zoznam riadkov KSP."
-            )
-
-        ksp_rows = found_rows
 
     if not isinstance(
         ksp_rows,
@@ -272,7 +216,7 @@ def normalize_ksp_rows(ksp_rows):
             "Riadky KSP nemajú správny formát."
         )
 
-    clean_rows = []
+    result = []
 
     for item in ksp_rows:
 
@@ -280,28 +224,55 @@ def normalize_ksp_rows(ksp_rows):
             item,
             dict
         ):
-            raise ValueError(
-                "Jeden z riadkov KSP nie je "
-                "v správnom JSON formáte."
+            continue
+
+        clean_item = {}
+
+        for field in [
+            "proces",
+            "poradie",
+            "subproces",
+            "mnozstvo",
+            "druh_kontroly",
+            "sposob_kontroly",
+            "kriterium",
+            "pocetnost",
+            "celkovy_pocet",
+            "zodpoveda",
+            "vykona",
+            "tolerancia",
+            "dokumentovanie",
+            "poznamka"
+        ]:
+
+            value = item.get(
+                field,
+                ""
             )
 
-        clean_rows.append(
-            item
+            if value is None:
+                value = ""
+
+            clean_item[field] = value
+
+        result.append(
+            clean_item
         )
 
-    if not clean_rows:
+    if not result:
         raise ValueError(
             "AI nevytvorila žiadne riadky KSP."
         )
 
-    return clean_rows
+    return result
 
 
-# --------------------------------------------------
-# NÁJDENIE KSP LISTU A TABUĽKY
-# --------------------------------------------------
+# ==========================================================
+# NÁJDENIE KSP LISTU / RIADKOV MUSTRY
+# ==========================================================
 
 def find_ksp_worksheet(workbook):
+
     required_markers = [
         "názov subprocesu",
         "druh skúšky/kontroly",
@@ -314,25 +285,22 @@ def find_ksp_worksheet(workbook):
 
     for worksheet in workbook.worksheets:
 
-        sheet_text_parts = []
-
-        max_row = min(
-            worksheet.max_row,
-            30
-        )
-
-        max_column = min(
-            worksheet.max_column,
-            20
-        )
+        text_parts = []
 
         for row in range(
             1,
-            max_row + 1
+            min(
+                worksheet.max_row,
+                30
+            ) + 1
         ):
+
             for column in range(
                 1,
-                max_column + 1
+                min(
+                    worksheet.max_column,
+                    20
+                ) + 1
             ):
 
                 cell = worksheet.cell(
@@ -351,22 +319,21 @@ def find_ksp_worksheet(workbook):
                 )
 
                 if text:
-                    sheet_text_parts.append(
+                    text_parts.append(
                         text
                     )
 
         sheet_text = " ".join(
-            sheet_text_parts
+            text_parts
         )
 
-        score = 0
-
-        for marker in required_markers:
-
-            if marker in sheet_text:
-                score += 1
+        score = sum(
+            marker in sheet_text
+            for marker in required_markers
+        )
 
         if score > best_score:
+
             best_score = score
             best_sheet = worksheet
 
@@ -375,8 +342,7 @@ def find_ksp_worksheet(workbook):
         or best_score < 3
     ):
         raise ValueError(
-            "Nepodarilo sa automaticky nájsť "
-            "list s KSP tabuľkou."
+            "Nepodarilo sa nájsť KSP list."
         )
 
     return best_sheet
@@ -385,12 +351,6 @@ def find_ksp_worksheet(workbook):
 def find_table_header_row(
     worksheet
 ):
-    markers = [
-        "názov subprocesu",
-        "druh skúšky/kontroly",
-        "spôsob kontroly",
-        "početnosť"
-    ]
 
     for row in range(
         1,
@@ -400,7 +360,7 @@ def find_table_header_row(
         ) + 1
     ):
 
-        row_text = []
+        texts = []
 
         for column in range(
             1,
@@ -426,6 +386,60 @@ def find_table_header_row(
             )
 
             if text:
+                texts.append(
+                    text
+                )
+
+        row_text = " ".join(
+            texts
+        )
+
+        if (
+            "názov subprocesu" in row_text
+            and "druh skúšky/kontroly" in row_text
+            and "početnosť" in row_text
+        ):
+            return row
+
+    raise ValueError(
+        "Nepodarilo sa nájsť hlavičku KSP tabuľky."
+    )
+
+
+def find_process_template_row(
+    worksheet,
+    table_header_row
+):
+
+    for row in range(
+        table_header_row + 1,
+        min(
+            worksheet.max_row,
+            table_header_row + 25
+        ) + 1
+    ):
+
+        row_text = []
+
+        for column in range(
+            1,
+            15
+        ):
+
+            cell = get_real_cell(
+                worksheet,
+                row,
+                column
+            )
+
+            if cell is None:
+                continue
+
+            text = normalize_text(
+                cell.value
+            )
+
+            if text:
                 row_text.append(
                     text
                 )
@@ -434,193 +448,220 @@ def find_table_header_row(
             row_text
         )
 
-        score = sum(
-            marker in joined
-            for marker in markers
-        )
-
-        if score >= 3:
+        if "názov procesu" in joined:
             return row
 
-    raise ValueError(
-        "Nepodarilo sa nájsť riadok "
-        "s hlavičkou KSP tabuľky."
-    )
-
-
-def find_start_row(
-    worksheet,
-    header_row
-):
-    """
-    V mustre je pod hlavičkou často ešte
-    zelený/žltý riadok 'Názov procesu'.
-    Dáta začnú až pod ním.
-    """
-
-    candidate_row = (
-        header_row + 1
-    )
-
-    row_text = []
-
-    for column in range(
-        1,
-        min(
-            worksheet.max_column,
-            15
-        ) + 1
-    ):
-
-        cell = worksheet.cell(
-            row=candidate_row,
-            column=column
-        )
-
-        if isinstance(
-            cell,
-            MergedCell
-        ):
-            continue
-
-        text = normalize_text(
-            cell.value
-        )
-
-        if text:
-            row_text.append(
-                text
-            )
-
-    joined = " ".join(
-        row_text
-    )
-
-    if (
-        "názov procesu"
-        in joined
-        or "material"
-        in joined
-        or "materiál"
-        in joined
-    ):
-        return (
-            header_row + 2
-        )
-
+    # Ak mustra nemá ukážkový procesový riadok,
+    # použijeme prvý riadok pod hlavičkou.
     return (
-        header_row + 1
+        table_header_row + 2
     )
 
 
-# --------------------------------------------------
-# NÁJDENIE TITULNÉHO LISTU
-# --------------------------------------------------
-
-def find_title_worksheet(workbook):
-    markers = [
-        "názov stavby",
-        "objednávateľ",
-        "zhotoviteľ"
-    ]
-
-    best_sheet = None
-    best_score = 0
-
-    for worksheet in workbook.worksheets:
-
-        sheet_text_parts = []
-
-        max_row = min(
-            worksheet.max_row,
-            40
-        )
-
-        max_column = min(
-            worksheet.max_column,
-            15
-        )
-
-        for row in range(
-            1,
-            max_row + 1
-        ):
-            for column in range(
-                1,
-                max_column + 1
-            ):
-
-                cell = worksheet.cell(
-                    row=row,
-                    column=column
-                )
-
-                if isinstance(
-                    cell,
-                    MergedCell
-                ):
-                    continue
-
-                text = normalize_text(
-                    cell.value
-                )
-
-                if text:
-                    sheet_text_parts.append(
-                        text
-                    )
-
-        sheet_text = " ".join(
-            sheet_text_parts
-        )
-
-        score = 0
-
-        for marker in markers:
-
-            if marker in sheet_text:
-                score += 1
-
-        if score > best_score:
-            best_score = score
-            best_sheet = worksheet
-
-    if best_score >= 2:
-        return best_sheet
-
-    return None
-
-
-# --------------------------------------------------
-# HLAVIČKA PROJEKTU
-# --------------------------------------------------
-
-def find_label_cell(
+def find_data_template_rows(
     worksheet,
-    possible_labels
+    process_template_row
 ):
-    normalized_labels = [
-        normalize_text(label)
-        for label in possible_labels
-    ]
+    """
+    Nájde vzor pre:
+    - prvý dátový riadok subprocesu,
+    - pokračovací riadok,
+    - samostatný riadok.
+    """
 
-    max_search_row = min(
-        40,
-        worksheet.max_row
+    first_data_row = None
+    continuation_row = None
+
+    search_start = (
+        process_template_row + 1
     )
 
-    max_search_column = min(
-        20,
-        worksheet.max_column
+    search_end = min(
+        worksheet.max_row,
+        search_start + 40
     )
 
     for row in range(
-        1,
-        max_search_row + 1
+        search_start,
+        search_end + 1
     ):
+
+        # preskočíme ďalší procesový riadok
+        a_text = normalize_text(
+            get_real_cell(
+                worksheet,
+                row,
+                1
+            ).value
+            if get_real_cell(
+                worksheet,
+                row,
+                1
+            ) is not None
+            else ""
+        )
+
+        if "názov procesu" in a_text:
+            continue
+
+        # prvý riadok s obsahom v stĺpci E/F
+        e_cell = get_real_cell(
+            worksheet,
+            row,
+            5
+        )
+
+        f_cell = get_real_cell(
+            worksheet,
+            row,
+            6
+        )
+
+        has_control = (
+            e_cell is not None
+            and normalize_text(
+                e_cell.value
+            )
+        )
+
+        has_method = (
+            f_cell is not None
+            and normalize_text(
+                f_cell.value
+            )
+        )
+
+        if (
+            has_control
+            or has_method
+        ):
+
+            if first_data_row is None:
+                first_data_row = row
+
+            # pokračovací riadok má zvyčajne prázdne A/B/D
+            a_value = get_real_cell(
+                worksheet,
+                row,
+                1
+            )
+
+            b_value = get_real_cell(
+                worksheet,
+                row,
+                2
+            )
+
+            d_value = get_real_cell(
+                worksheet,
+                row,
+                4
+            )
+
+            if (
+                not normalize_text(
+                    a_value.value
+                    if a_value is not None
+                    else ""
+                )
+                and not normalize_text(
+                    b_value.value
+                    if b_value is not None
+                    else ""
+                )
+                and not normalize_text(
+                    d_value.value
+                    if d_value is not None
+                    else ""
+                )
+            ):
+                continuation_row = row
+                break
+
+    if first_data_row is None:
+        first_data_row = (
+            process_template_row + 1
+        )
+
+    if continuation_row is None:
+        continuation_row = (
+            first_data_row
+        )
+
+    return (
+        first_data_row,
+        continuation_row
+    )
+
+
+# ==========================================================
+# HLAVIČKA PROJEKTU
+# ==========================================================
+
+def get_metadata_value(
+    metadata,
+    field
+):
+
+    if not isinstance(
+        metadata,
+        dict
+    ):
+        return ""
+
+    value = metadata.get(
+        field,
+        ""
+    )
+
+    if isinstance(
+        value,
+        dict
+    ):
+        value = value.get(
+            "value",
+            ""
+        )
+
+    if value is None:
+        return ""
+
+    value = str(
+        value
+    ).strip()
+
+    if value.upper() == "OVERIŤ":
+        return ""
+
+    return value
+
+
+def find_exact_label(
+    worksheet,
+    labels
+):
+
+    normalized_labels = {
+        normalize_text(
+            label
+        )
+        for label in labels
+    }
+
+    for row in range(
+        1,
+        min(
+            worksheet.max_row,
+            40
+        ) + 1
+    ):
+
         for column in range(
             1,
-            max_search_column + 1
+            min(
+                worksheet.max_column,
+                15
+            ) + 1
         ):
 
             cell = worksheet.cell(
@@ -634,45 +675,37 @@ def find_label_cell(
             ):
                 continue
 
-            cell_text = normalize_text(
+            text = normalize_text(
                 cell.value
             )
 
-            if not cell_text:
-                continue
-
-            for label in normalized_labels:
-
-                if (
-                    cell_text == label
-                    or cell_text.startswith(label)
-                ):
-                    return cell
+            if text in normalized_labels:
+                return cell
 
     return None
 
 
-def clear_unique_real_cells(
+def clear_row_right_of_label(
     worksheet,
-    row,
-    start_column,
-    end_column
+    label_cell
 ):
-    """
-    Vyčistí staré údaje v riadku napravo od označenia,
-    aj keď boli bunky zlúčené.
-    """
+
+    if label_cell is None:
+        return
 
     cleared = set()
 
     for column in range(
-        start_column,
-        end_column + 1
+        label_cell.column + 1,
+        min(
+            worksheet.max_column,
+            15
+        ) + 1
     ):
 
         real_cell = get_real_cell(
             worksheet,
-            row,
+            label_cell.row,
             column
         )
 
@@ -689,30 +722,39 @@ def clear_unique_real_cells(
         )
 
 
-def find_value_cell_next_to_label(
+def set_label_value(
     worksheet,
-    label_cell
+    labels,
+    value
 ):
-    if label_cell is None:
-        return None
 
-    row = label_cell.row
-
-    start_column = (
-        label_cell.column + 1
+    label_cell = find_exact_label(
+        worksheet,
+        labels
     )
 
+    if label_cell is None:
+        return False
+
+    clear_row_right_of_label(
+        worksheet,
+        label_cell
+    )
+
+    if not value:
+        return True
+
     for column in range(
-        start_column,
+        label_cell.column + 1,
         min(
             worksheet.max_column,
-            start_column + 8
+            15
         ) + 1
     ):
 
         real_cell = get_real_cell(
             worksheet,
-            row,
+            label_cell.row,
             column
         )
 
@@ -725,197 +767,64 @@ def find_value_cell_next_to_label(
         ):
             continue
 
-        return real_cell
+        real_cell.value = value
+        return True
 
-    return None
+    return False
 
 
-def set_header_value(
+def clear_unlabelled_header_rows(
     worksheet,
-    labels,
-    value
+    object_label
 ):
-    label_cell = find_label_cell(
-        worksheet,
-        labels
-    )
-
-    if label_cell is None:
-        return False
-
-    # Najprv odstránime starý projektový text
-    # v celom riadku napravo od labelu.
-    clear_unique_real_cells(
-        worksheet,
-        label_cell.row,
-        label_cell.column + 1,
-        min(
-            worksheet.max_column,
-            15
-        )
-    )
-
-    value_cell = (
-        find_value_cell_next_to_label(
-            worksheet,
-            label_cell
-        )
-    )
-
-    if value_cell is None:
-        return False
-
-    if is_empty_metadata_value(
-        value
-    ):
-        value_cell.value = None
-
-    else:
-        value_cell.value = value
-
-    return True
-
-
-def clear_header_value(
-    worksheet,
-    labels
-):
-    label_cell = find_label_cell(
-        worksheet,
-        labels
-    )
-
-    if label_cell is None:
-        return False
-
-    clear_unique_real_cells(
-        worksheet,
-        label_cell.row,
-        label_cell.column + 1,
-        min(
-            worksheet.max_column,
-            15
-        )
-    )
-
-    return True
-
-
-def get_metadata_value(
-    metadata,
-    field
-):
-    if not isinstance(
-        metadata,
-        dict
-    ):
-        return None
-
-    item = metadata.get(
-        field
-    )
-
-    if isinstance(
-        item,
-        dict
-    ):
-        return item.get(
-            "value"
-        )
-
-    if isinstance(
-        item,
-        str
-    ):
-        return item
-
-    return None
-
-
-def clear_old_unlabelled_part_row(
-    worksheet
-):
-    """
-    V KSP mustre býva pod riadkom 'Objekt'
-    ešte starý nezalabelovaný text typu:
-    'Časť 300 Spodná stavba ...'
-
-    Ten sa musí odstrániť, inak zostane
-    v novom projekte.
-    """
-
-    object_label = find_label_cell(
-        worksheet,
-        [
-            "Objekt",
-            "Stavebný objekt",
-            "Číslo a názov objektu"
-        ]
-    )
 
     if object_label is None:
         return None
 
     try:
-        table_header_row = (
-            find_table_header_row(
-                worksheet
-            )
+        table_header_row = find_table_header_row(
+            worksheet
         )
-
     except ValueError:
         return None
 
-    first_row = (
-        object_label.row + 1
-    )
-
-    last_row = (
-        table_header_row - 1
-    )
-
-    if first_row > last_row:
-        return None
-
-    first_value_cell = None
+    first_candidate = None
 
     for row in range(
-        first_row,
-        last_row + 1
+        object_label.row + 1,
+        table_header_row
     ):
 
-        # Nechávame ľavé labelové bunky na pokoji.
-        start_column = (
-            object_label.column + 1
-        )
-
-        # Zapamätáme si prvú vhodnú bunku
-        # pre hodnotu ČASŤ.
-        if first_value_cell is None:
-
-            first_value_cell = get_real_cell(
-                worksheet,
-                row,
-                start_column
-            )
-
-        clear_unique_real_cells(
-            worksheet,
-            row,
-            start_column,
+        for column in range(
+            object_label.column + 1,
             min(
                 worksheet.max_column,
                 15
-            )
-        )
+            ) + 1
+        ):
 
-    return first_value_cell
+            real_cell = get_real_cell(
+                worksheet,
+                row,
+                column
+            )
+
+            if real_cell is None:
+                continue
+
+            if first_candidate is None:
+                first_candidate = real_cell
+
+            real_cell.value = None
+
+    return first_candidate
 
 
 def update_project_header(
     worksheet,
     metadata
 ):
+
     if not metadata:
         return
 
@@ -934,73 +843,72 @@ def update_project_header(
         "cast"
     )
 
-    zhotovitel = get_metadata_value(
-        metadata,
-        "zhotovitel"
-    )
-
     objednavatel = get_metadata_value(
         metadata,
         "objednavatel"
     )
 
-    set_header_value(
+    zhotovitel = get_metadata_value(
+        metadata,
+        "zhotovitel"
+    )
+
+    set_label_value(
         worksheet,
         [
             "Stavba",
-            "Názov stavby",
-            "Názov stavby / Építkezés neve"
+            "Názov stavby"
         ],
         stavba
     )
 
-    set_header_value(
+    object_label = find_exact_label(
         worksheet,
         [
             "Objekt",
             "Stavebný objekt",
             "Číslo a názov objektu"
-        ],
-        objekt
+        ]
     )
 
-    # ------------------------------------------
-    # STARÁ NEZALABELOVANÁ ČASŤ Z MUSTRY
-    # ------------------------------------------
+    if object_label is not None:
 
-    part_cell = (
-        clear_old_unlabelled_part_row(
-            worksheet
+        set_label_value(
+            worksheet,
+            [
+                "Objekt",
+                "Stavebný objekt",
+                "Číslo a názov objektu"
+            ],
+            objekt
         )
-    )
 
-    # Ak je v mustre normálny label "Časť",
-    # zapíšeme ho tam.
-    part_was_set = set_header_value(
-        worksheet,
-        [
-            "Časť",
-            "Časť stavby"
-        ],
-        cast
-    )
+        unlabelled_cell = (
+            clear_unlabelled_header_rows(
+                worksheet,
+                object_label
+            )
+        )
 
-    # Ak label "Časť" neexistuje, ale mustra
-    # používa samostatný nezalabelovaný riadok,
-    # použijeme práve ten.
-    if (
-        not part_was_set
-        and part_cell is not None
-        and not is_empty_metadata_value(
+        if (
+            cast
+            and unlabelled_cell is not None
+        ):
+            unlabelled_cell.value = cast
+
+    else:
+        set_label_value(
+            worksheet,
+            [
+                "Časť",
+                "Časť stavby"
+            ],
             cast
         )
-    ):
-        part_cell.value = cast
 
-    set_header_value(
+    set_label_value(
         worksheet,
         [
-            "Objednávateľ 1",
             "Objednávateľ",
             "Investor",
             "Stavebník"
@@ -1008,7 +916,7 @@ def update_project_header(
         objednavatel
     )
 
-    set_header_value(
+    set_label_value(
         worksheet,
         [
             "Zhotoviteľ",
@@ -1017,113 +925,17 @@ def update_project_header(
         zhotovitel
     )
 
-    clear_header_value(
-        worksheet,
-        [
-            "Objednávateľ 2"
-        ]
-    )
 
+# ==========================================================
+# PRÍPRAVA DÁTOVEJ OBLASTI
+# ==========================================================
 
-# --------------------------------------------------
-# KSP STĹPCE
-# --------------------------------------------------
-
-def get_column_map():
-    """
-    Táto mustra má presne tieto existujúce stĺpce.
-
-    A = Por. č.
-    B:C = Názov subprocesu
-    D = Množstvo
-    E = Druh skúšky/kontroly
-    F = Spôsob kontroly
-    G = Kritérium kvality
-    H = Početnosť
-    I = Celkový počet
-    J = Za skúšku zodpovedá
-    K = Skúšku vykoná
-    L = Požiadavky a tolerancie
-    M = Spôsob dokumentovania
-
-    ŽIADNY nový stĺpec Poznámka sa nepridáva.
-    """
-
-    return {
-        "poradie": 1,
-        "subproces": 2,
-        "mnozstvo": 4,
-        "druh_kontroly": 5,
-        "sposob_kontroly": 6,
-        "kriterium": 7,
-        "pocetnost": 8,
-        "celkovy_pocet": 9,
-        "zodpoveda": 10,
-        "vykona": 11,
-        "tolerancia": 12,
-        "dokumentovanie": 13
-    }
-
-
-# --------------------------------------------------
-# DÁTOVÁ ČASŤ KSP
-# --------------------------------------------------
-
-def capture_template_styles(
-    worksheet,
-    start_row,
-    column_map
-):
-    """
-    Zachytíme štýl pôvodnej mustry ešte predtým,
-    než odstránime staré zlúčenia buniek.
-    """
-
-    styles = {}
-
-    for (
-        field_name,
-        column_number
-    ) in column_map.items():
-
-        source_cell = get_real_cell(
-            worksheet,
-            start_row,
-            column_number
-        )
-
-        styles[
-            field_name
-        ] = capture_style(
-            source_cell
-        )
-
-    # Pre stĺpec C použijeme štýl subprocesu.
-    styles[
-        "_subproces_c"
-    ] = capture_style(
-        get_real_cell(
-            worksheet,
-            start_row,
-            3
-        )
-    )
-
-    return styles
-
-
-def unmerge_data_area(
+def remove_data_merges(
     worksheet,
     start_row
 ):
-    """
-    Starý referenčný obsah obsahuje veľa vertikálne
-    zlúčených buniek. Tie nemôžu zostať, pretože
-    nové AI riadky by sa zapisovali do rovnakých
-    top-left buniek.
-    """
 
-    ranges_to_unmerge = []
+    ranges_to_remove = []
 
     for merged_range in list(
         worksheet.merged_cells.ranges
@@ -1133,42 +945,38 @@ def unmerge_data_area(
             merged_range.max_row
             >= start_row
         ):
-            ranges_to_unmerge.append(
-                str(merged_range)
+            ranges_to_remove.append(
+                str(
+                    merged_range
+                )
             )
 
-    for range_string in ranges_to_unmerge:
+    for range_string in ranges_to_remove:
 
         worksheet.unmerge_cells(
             range_string
         )
 
 
-def clear_existing_ksp_rows(
+def clear_data_area(
     worksheet,
-    start_row,
-    column_map
+    start_row
 ):
     """
-    Vyčistí iba existujúce KSP dátové stĺpce A:M.
-    Nevytvára ani nemaže stĺpce.
+    Dôležité:
+    vyčistí A:N vrátane Poznámky.
+    Staré mostárske poznámky sa nesmú preniesť.
     """
-
-    used_columns = sorted(
-        set(
-            list(
-                column_map.values()
-            )
-            + [3]
-        )
-    )
 
     for row in range(
         start_row,
         worksheet.max_row + 1
     ):
 
-        for column in used_columns:
+        for column in range(
+            1,
+            15
+        ):
 
             cell = worksheet.cell(
                 row=row,
@@ -1184,98 +992,67 @@ def clear_existing_ksp_rows(
             cell.value = None
 
 
-def write_ksp_rows(
+# ==========================================================
+# ZÁPIS PODĽA MUSTRY
+# ==========================================================
+
+def write_process_row(
     worksheet,
-    start_row,
-    ksp_rows,
-    column_map,
-    styles
+    target_row,
+    process_name,
+    process_template_row
 ):
-    source_height = (
-        worksheet
-        .row_dimensions[start_row]
-        .height
+
+    copy_row_style(
+        worksheet,
+        process_template_row,
+        target_row
     )
 
-    for index, item in enumerate(
-        ksp_rows
-    ):
+    worksheet.merge_cells(
+        start_row=target_row,
+        start_column=1,
+        end_row=target_row,
+        end_column=2
+    )
 
-        target_row = (
-            start_row + index
-        )
+    worksheet.merge_cells(
+        start_row=target_row,
+        start_column=3,
+        end_row=target_row,
+        end_column=14
+    )
 
-        if source_height is not None:
-            worksheet.row_dimensions[
-                target_row
-            ].height = source_height
+    worksheet.cell(
+        row=target_row,
+        column=1
+    ).value = "Názov procesu :"
 
-        for (
-            field_name,
-            column_number
-        ) in column_map.items():
-
-            target_cell = worksheet.cell(
-                row=target_row,
-                column=column_number
-            )
-
-            apply_style(
-                target_cell,
-                styles.get(
-                    field_name
-                )
-            )
-
-            value = item.get(
-                field_name,
-                ""
-            )
-
-            if value is None:
-                value = ""
-
-            target_cell.value = value
-
-        # C patrí k názvu subprocesu a zostáva
-        # súčasťou jeho vizuálneho poľa.
-        cell_c = worksheet.cell(
-            row=target_row,
-            column=3
-        )
-
-        apply_style(
-            cell_c,
-            styles.get(
-                "_subproces_c"
-            )
-            or styles.get(
-                "subproces"
-            )
-        )
-
-        cell_c.value = None
+    worksheet.cell(
+        row=target_row,
+        column=3
+    ).value = process_name
 
 
-def get_consecutive_groups(
-    ksp_rows,
-    field_name,
-    start_row,
-    group_start_index=0,
-    group_end_index=None
+def write_data_row(
+    worksheet,
+    target_row,
+    item,
+    source_style_row
 ):
-    if group_end_index is None:
-        group_end_index = (
-            len(ksp_rows) - 1
-        )
 
-    groups = []
+    copy_row_style(
+        worksheet,
+        source_style_row,
+        target_row
+    )
 
-    index = group_start_index
+    for (
+        field_name,
+        column_number
+    ) in COLUMN_MAP.items():
 
-    while index <= group_end_index:
-
-        value = ksp_rows[index].get(
+        value = item.get(
             field_name,
             ""
         )
@@ -1283,246 +1060,203 @@ def get_consecutive_groups(
         if value is None:
             value = ""
 
-        value = str(
-            value
+        worksheet.cell(
+            row=target_row,
+            column=column_number
+        ).value = value
+
+
+def merge_subprocess_block(
+    worksheet,
+    start_row,
+    end_row
+):
+
+    # B:C je názov subprocesu vždy.
+    worksheet.merge_cells(
+        start_row=start_row,
+        start_column=2,
+        end_row=end_row,
+        end_column=3
+    )
+
+    # A a D vertikálne iba pri viacriadkovom subprocese.
+    if end_row > start_row:
+
+        worksheet.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=end_row,
+            end_column=1
+        )
+
+        worksheet.merge_cells(
+            start_row=start_row,
+            start_column=4,
+            end_row=end_row,
+            end_column=4
+        )
+
+
+def build_output_rows(
+    worksheet,
+    ksp_rows,
+    start_row,
+    process_template_row,
+    first_data_template_row,
+    continuation_template_row
+):
+
+    current_excel_row = start_row
+    current_process = None
+    index = 0
+
+    while index < len(
+        ksp_rows
+    ):
+
+        item = ksp_rows[
+            index
+        ]
+
+        process_name = str(
+            item.get(
+                "proces",
+                ""
+            )
+            or ""
         ).strip()
 
-        start_index = index
-        end_index = index
-
-        while (
-            end_index + 1
-            <= group_end_index
-        ):
-
-            next_value = (
-                ksp_rows[
-                    end_index + 1
-                ]
-                .get(
-                    field_name,
-                    ""
-                )
+        # Ak AI nedá proces, nedovolíme exporteru
+        # vymýšľať iný vzhľad. Použijeme neutrálne
+        # označenie, aby bolo vidieť, že treba opraviť obsah.
+        if not process_name:
+            process_name = (
+                "Proces neuvedený"
             )
 
-            if next_value is None:
-                next_value = ""
+        if process_name != current_process:
 
-            next_value = str(
-                next_value
+            write_process_row(
+                worksheet,
+                current_excel_row,
+                process_name,
+                process_template_row
+            )
+
+            current_excel_row += 1
+            current_process = process_name
+
+        subproces_name = str(
+            item.get(
+                "subproces",
+                ""
+            )
+            or ""
+        ).strip()
+
+        block_start_index = index
+        block_end_index = index
+
+        while (
+            block_end_index + 1
+            < len(
+                ksp_rows
+            )
+        ):
+
+            next_item = ksp_rows[
+                block_end_index + 1
+            ]
+
+            next_process = str(
+                next_item.get(
+                    "proces",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            next_subproces = str(
+                next_item.get(
+                    "subproces",
+                    ""
+                )
+                or ""
             ).strip()
 
             if (
-                not value
-                or next_value != value
+                next_process != process_name
+                or next_subproces
+                != subproces_name
             ):
                 break
 
-            end_index += 1
+            block_end_index += 1
 
-        groups.append(
-            (
-                start_index,
-                end_index,
-                value
+        block_excel_start = (
+            current_excel_row
+        )
+
+        for row_index in range(
+            block_start_index,
+            block_end_index + 1
+        ):
+
+            source_style_row = (
+                first_data_template_row
+                if row_index
+                == block_start_index
+                else continuation_template_row
             )
+
+            write_data_row(
+                worksheet,
+                current_excel_row,
+                ksp_rows[
+                    row_index
+                ],
+                source_style_row
+            )
+
+            current_excel_row += 1
+
+        block_excel_end = (
+            current_excel_row - 1
+        )
+
+        merge_subprocess_block(
+            worksheet,
+            block_excel_start,
+            block_excel_end
         )
 
         index = (
-            end_index + 1
+            block_end_index + 1
         )
 
-    return groups
+    return current_excel_row
 
 
-def merge_generated_rows(
-    worksheet,
-    start_row,
-    ksp_rows
-):
-    """
-    Vrátime typické zlúčenia mustry:
-
-    - Por. č. vertikálne pre rovnaký subproces
-    - Názov subprocesu B:C horizontálne
-      a zároveň vertikálne pre rovnaký subproces
-    - Množstvo vertikálne pre rovnaký subproces
-    - Druh kontroly vertikálne pri po sebe
-      idúcich rovnakých hodnotách v rámci subprocesu
-    """
-
-    if not ksp_rows:
-        return
-
-    subproces_groups = get_consecutive_groups(
-        ksp_rows,
-        "subproces",
-        start_row
-    )
-
-    for (
-        group_start_index,
-        group_end_index,
-        subproces_value
-    ) in subproces_groups:
-
-        excel_start = (
-            start_row
-            + group_start_index
-        )
-
-        excel_end = (
-            start_row
-            + group_end_index
-        )
-
-        # --------------------------------------
-        # SUBPROCES B:C
-        # --------------------------------------
-
-        worksheet.merge_cells(
-            start_row=excel_start,
-            start_column=2,
-            end_row=excel_end,
-            end_column=3
-        )
-
-        # --------------------------------------
-        # PORADIE A
-        # --------------------------------------
-
-        poradie_values = {
-            str(
-                ksp_rows[i]
-                .get(
-                    "poradie",
-                    ""
-                )
-            ).strip()
-            for i in range(
-                group_start_index,
-                group_end_index + 1
-            )
-        }
-
-        poradie_values.discard(
-            ""
-        )
-
-        if (
-            excel_end > excel_start
-            and len(
-                poradie_values
-            ) == 1
-        ):
-            worksheet.merge_cells(
-                start_row=excel_start,
-                start_column=1,
-                end_row=excel_end,
-                end_column=1
-            )
-
-        # --------------------------------------
-        # MNOŽSTVO D
-        # --------------------------------------
-
-        mnozstvo_values = {
-            str(
-                ksp_rows[i]
-                .get(
-                    "mnozstvo",
-                    ""
-                )
-            ).strip()
-            for i in range(
-                group_start_index,
-                group_end_index + 1
-            )
-        }
-
-        mnozstvo_values.discard(
-            ""
-        )
-
-        if (
-            excel_end > excel_start
-            and len(
-                mnozstvo_values
-            ) == 1
-        ):
-            worksheet.merge_cells(
-                start_row=excel_start,
-                start_column=4,
-                end_row=excel_end,
-                end_column=4
-            )
-
-        # --------------------------------------
-        # DRUH KONTROLY E
-        # --------------------------------------
-
-        control_groups = get_consecutive_groups(
-            ksp_rows,
-            "druh_kontroly",
-            start_row,
-            group_start_index,
-            group_end_index
-        )
-
-        for (
-            control_start_index,
-            control_end_index,
-            control_value
-        ) in control_groups:
-
-            if (
-                control_value
-                and control_end_index
-                > control_start_index
-            ):
-
-                worksheet.merge_cells(
-                    start_row=(
-                        start_row
-                        + control_start_index
-                    ),
-                    start_column=5,
-                    end_row=(
-                        start_row
-                        + control_end_index
-                    ),
-                    end_column=5
-                )
-
-
-# --------------------------------------------------
+# ==========================================================
 # TVORBA EXCELU
-# --------------------------------------------------
+# ==========================================================
 
 def create_ksp_excel(
     template_bytes,
     ksp_rows,
     metadata=None
 ):
-    # ------------------------------------------
-    # 1. KONTROLA AI DÁT
-    # ------------------------------------------
 
     ksp_rows = normalize_ksp_rows(
         ksp_rows
     )
 
-    template_file = io.BytesIO(
-        template_bytes
-    )
-
     workbook = load_workbook(
-        template_file
+        io.BytesIO(
+            template_bytes
+        )
     )
-
-    # ------------------------------------------
-    # 2. KSP LIST
-    # ------------------------------------------
 
     ksp_worksheet = (
         find_ksp_worksheet(
@@ -1536,97 +1270,447 @@ def create_ksp_excel(
         )
     )
 
-    start_row = find_start_row(
-        ksp_worksheet,
-        table_header_row
-    )
-
-    column_map = get_column_map()
-
-    # ------------------------------------------
-    # 3. TITULNÝ LIST
-    # ------------------------------------------
-
-    title_worksheet = (
-        find_title_worksheet(
-            workbook
+    process_template_row = (
+        find_process_template_row(
+            ksp_worksheet,
+            table_header_row
         )
     )
 
-    # ------------------------------------------
-    # 4. HLAVIČKA
-    # ------------------------------------------
+    (
+        first_data_template_row,
+        continuation_template_row
+    ) = find_data_template_rows(
+        ksp_worksheet,
+        process_template_row
+    )
 
+    # Hlavičku prepíšeme ešte pred čistením dát.
     update_project_header(
         ksp_worksheet,
         metadata
     )
 
-    if (
-        title_worksheet is not None
-        and title_worksheet
-        is not ksp_worksheet
-    ):
-
-        update_project_header(
-            title_worksheet,
-            metadata
-        )
-
-    # ------------------------------------------
-    # 5. ZACHYTENIE PÔVODNÉHO ŠTÝLU
-    # ------------------------------------------
-
-    styles = capture_template_styles(
-        ksp_worksheet,
-        start_row,
-        column_map
+    # Zachováme celú mustru nad dátami.
+    # Dátová oblasť sa začne na existujúcom
+    # procesovom riadku.
+    start_row = (
+        process_template_row
     )
 
-    # ------------------------------------------
-    # 6. ODSTRÁNENIE STARÝCH MERGE V DÁTACH
-    # ------------------------------------------
+    # Štýlové vzory si musíme uchovať v pamäti
+    # skôr, než odstránime staré merge a hodnoty.
+    style_snapshots = {}
 
-    unmerge_data_area(
+    for (
+        name,
+        source_row
+    ) in [
+        (
+            "process",
+            process_template_row
+        ),
+        (
+            "first",
+            first_data_template_row
+        ),
+        (
+            "continuation",
+            continuation_template_row
+        )
+    ]:
+
+        row_snapshot = []
+
+        for column in range(
+            1,
+            15
+        ):
+
+            source_cell = get_real_cell(
+                ksp_worksheet,
+                source_row,
+                column
+            )
+
+            row_snapshot.append(
+                {
+                    "style":
+                        copy(
+                            source_cell._style
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "font":
+                        copy(
+                            source_cell.font
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "fill":
+                        copy(
+                            source_cell.fill
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "border":
+                        copy(
+                            source_cell.border
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "alignment":
+                        copy(
+                            source_cell.alignment
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "protection":
+                        copy(
+                            source_cell.protection
+                        )
+                        if source_cell is not None
+                        else None,
+
+                    "number_format":
+                        source_cell.number_format
+                        if source_cell is not None
+                        else "General"
+                }
+            )
+
+        style_snapshots[
+            name
+        ] = {
+            "cells":
+                row_snapshot,
+
+            "height":
+                ksp_worksheet
+                .row_dimensions[source_row]
+                .height
+        }
+
+    remove_data_merges(
         ksp_worksheet,
         start_row
     )
 
-    # ------------------------------------------
-    # 7. VYČISTENIE STARÝCH DÁT
-    # ------------------------------------------
-
-    clear_existing_ksp_rows(
+    clear_data_area(
         ksp_worksheet,
-        start_row,
-        column_map
+        start_row
     )
 
-    # ------------------------------------------
-    # 8. NOVÉ RIADKY
-    # ------------------------------------------
+    # Lokálne predefinujeme kopírovanie štýlu:
+    def apply_snapshot(
+        target_row,
+        snapshot_name
+    ):
 
-    write_ksp_rows(
-        ksp_worksheet,
-        start_row,
-        ksp_rows,
-        column_map,
-        styles
-    )
+        snapshot = style_snapshots[
+            snapshot_name
+        ]
 
-    # ------------------------------------------
-    # 9. OBNOVENIE VZHĽADU MUSTRY
-    # ------------------------------------------
+        for column in range(
+            1,
+            15
+        ):
 
-    merge_generated_rows(
-        ksp_worksheet,
-        start_row,
+            target_cell = (
+                ksp_worksheet.cell(
+                    row=target_row,
+                    column=column
+                )
+            )
+
+            cell_style = (
+                snapshot[
+                    "cells"
+                ][
+                    column - 1
+                ]
+            )
+
+            if (
+                cell_style[
+                    "style"
+                ]
+                is not None
+            ):
+                target_cell._style = copy(
+                    cell_style[
+                        "style"
+                    ]
+                )
+
+            if (
+                cell_style[
+                    "font"
+                ]
+                is not None
+            ):
+                target_cell.font = copy(
+                    cell_style[
+                        "font"
+                    ]
+                )
+
+            if (
+                cell_style[
+                    "fill"
+                ]
+                is not None
+            ):
+                target_cell.fill = copy(
+                    cell_style[
+                        "fill"
+                    ]
+                )
+
+            if (
+                cell_style[
+                    "border"
+                ]
+                is not None
+            ):
+                target_cell.border = copy(
+                    cell_style[
+                        "border"
+                    ]
+                )
+
+            if (
+                cell_style[
+                    "alignment"
+                ]
+                is not None
+            ):
+                target_cell.alignment = copy(
+                    cell_style[
+                        "alignment"
+                    ]
+                )
+
+            if (
+                cell_style[
+                    "protection"
+                ]
+                is not None
+            ):
+                target_cell.protection = copy(
+                    cell_style[
+                        "protection"
+                    ]
+                )
+
+            target_cell.number_format = (
+                cell_style[
+                    "number_format"
+                ]
+            )
+
+        if (
+            snapshot[
+                "height"
+            ]
+            is not None
+        ):
+            ksp_worksheet.row_dimensions[
+                target_row
+            ].height = snapshot[
+                "height"
+            ]
+
+    # Namiesto starých helperov zapíšeme výstup
+    # priamo so snapshotmi.
+    current_excel_row = start_row
+    current_process = None
+    index = 0
+
+    while index < len(
         ksp_rows
-    )
+    ):
 
-    # ------------------------------------------
-    # 10. ULOŽENIE
-    # ------------------------------------------
+        item = ksp_rows[
+            index
+        ]
+
+        process_name = str(
+            item.get(
+                "proces",
+                ""
+            )
+            or ""
+        ).strip()
+
+        if not process_name:
+            process_name = (
+                "Proces neuvedený"
+            )
+
+        if process_name != current_process:
+
+            apply_snapshot(
+                current_excel_row,
+                "process"
+            )
+
+            ksp_worksheet.merge_cells(
+                start_row=current_excel_row,
+                start_column=1,
+                end_row=current_excel_row,
+                end_column=2
+            )
+
+            ksp_worksheet.merge_cells(
+                start_row=current_excel_row,
+                start_column=3,
+                end_row=current_excel_row,
+                end_column=14
+            )
+
+            ksp_worksheet.cell(
+                row=current_excel_row,
+                column=1
+            ).value = "Názov procesu :"
+
+            ksp_worksheet.cell(
+                row=current_excel_row,
+                column=3
+            ).value = process_name
+
+            current_excel_row += 1
+            current_process = process_name
+
+        subproces_name = str(
+            item.get(
+                "subproces",
+                ""
+            )
+            or ""
+        ).strip()
+
+        block_start_index = index
+        block_end_index = index
+
+        while (
+            block_end_index + 1
+            < len(
+                ksp_rows
+            )
+        ):
+
+            next_item = ksp_rows[
+                block_end_index + 1
+            ]
+
+            next_process = str(
+                next_item.get(
+                    "proces",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            next_subproces = str(
+                next_item.get(
+                    "subproces",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            if (
+                next_process != process_name
+                or next_subproces
+                != subproces_name
+            ):
+                break
+
+            block_end_index += 1
+
+        block_excel_start = (
+            current_excel_row
+        )
+
+        for row_index in range(
+            block_start_index,
+            block_end_index + 1
+        ):
+
+            apply_snapshot(
+                current_excel_row,
+                (
+                    "first"
+                    if row_index
+                    == block_start_index
+                    else "continuation"
+                )
+            )
+
+            row_item = ksp_rows[
+                row_index
+            ]
+
+            for (
+                field_name,
+                column_number
+            ) in COLUMN_MAP.items():
+
+                value = row_item.get(
+                    field_name,
+                    ""
+                )
+
+                if value is None:
+                    value = ""
+
+                ksp_worksheet.cell(
+                    row=current_excel_row,
+                    column=column_number
+                ).value = value
+
+            current_excel_row += 1
+
+        block_excel_end = (
+            current_excel_row - 1
+        )
+
+        # Názov subprocesu je vždy B:C.
+        ksp_worksheet.merge_cells(
+            start_row=block_excel_start,
+            start_column=2,
+            end_row=block_excel_end,
+            end_column=3
+        )
+
+        if (
+            block_excel_end
+            > block_excel_start
+        ):
+
+            ksp_worksheet.merge_cells(
+                start_row=block_excel_start,
+                start_column=1,
+                end_row=block_excel_end,
+                end_column=1
+            )
+
+            ksp_worksheet.merge_cells(
+                start_row=block_excel_start,
+                start_column=4,
+                end_row=block_excel_end,
+                end_column=4
+            )
+
+        index = (
+            block_end_index + 1
+        )
 
     output = io.BytesIO()
 
