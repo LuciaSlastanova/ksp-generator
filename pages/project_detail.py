@@ -231,6 +231,14 @@ def show_project_detail():
             f"ksp_excel_{project_id}"
         )
 
+        classified_budget_key = (
+            f"classified_budget_{project_id}"
+        )
+
+        aggregated_budget_key = (
+            f"aggregated_budget_{project_id}"
+        )
+
         # ==================================================
         # ULOŽENÁ HLAVIČKA PROJEKTU
         # ==================================================
@@ -503,6 +511,17 @@ def show_project_detail():
                 excel_key,
                 None
             )
+
+            if selected_document_type == "budget":
+                st.session_state.pop(
+                    classified_budget_key,
+                    None
+                )
+
+                st.session_state.pop(
+                    aggregated_budget_key,
+                    None
+                )
 
             st.success(
                 f"Súbor '{new_file.name}' "
@@ -838,271 +857,380 @@ def show_project_detail():
             )
 
             # ------------------------------------------
-            # GENEROVANIE
+            # SPRACOVANIE ROZPOČTU A GENEROVANIE KSP
             # ------------------------------------------
 
-            if st.button(
-                "Vygenerovať KSP Excel",
-                use_container_width=True
-            ):
+            budget_documents = [
+                doc
+                for doc in documents
+                if doc["document_type"] == "budget"
+            ]
 
-                saved_header_now = get_project_header(
-                    project_id
+            if not budget_documents:
+
+                st.warning(
+                    "Projekt nemá nahraný rozpočet "
+                    "alebo cenovú ponuku."
                 )
 
-                if not saved_header_now:
+            else:
 
-                    st.warning(
-                        "Najprv skontroluj a ulož "
-                        "hlavičku projektu."
-                    )
+                st.markdown(
+                    "#### Krok A – spracovať cenovú ponuku"
+                )
 
-                    return
+                st.caption(
+                    "Tento krok spraví iba prvé AI volanie: "
+                    "AI rozpozná položky zo všetkých hárkov "
+                    "a Python ich potom sčíta. "
+                    "KSP sa ešte negeneruje."
+                )
 
-                current_header = {
-                    "stavba": st.session_state.get(
-                        f"header_stavba_{project_id}",
-                        ""
-                    ),
-                    "objekt": st.session_state.get(
-                        f"header_objekt_{project_id}",
-                        ""
-                    ),
-                    "cast": st.session_state.get(
-                        f"header_cast_{project_id}",
-                        ""
-                    ),
-                    "zhotovitel": st.session_state.get(
-                        f"header_zhotovitel_{project_id}",
-                        ""
-                    ),
-                    "objednavatel": st.session_state.get(
-                        f"header_objednavatel_{project_id}",
-                        ""
-                    )
-                }
-
-                normalized_saved_header = {
-                    field: get_saved_header_value(
-                        saved_header_now,
-                        field
-                    )
-                    for field in [
-                        "stavba",
-                        "objekt",
-                        "cast",
-                        "zhotovitel",
-                        "objednavatel"
-                    ]
-                }
-
-                if current_header != normalized_saved_header:
-
-                    st.warning(
-                        "Hlavičku si zmenila. "
-                        "Najprv klikni na "
-                        "💾 Uložiť hlavičku projektu."
-                    )
-
-                    return
-
-                # --------------------------------------
-                # FINÁLNA HLAVIČKA = ULOŽENÁ HLAVIČKA
-                # --------------------------------------
-
-                final_metadata = {
-                    field: {
-                        "value": normalized_saved_header[field]
-                    }
-                    for field in normalized_saved_header
-                }
-
-                # --------------------------------------
-                # ROZPOČTY / CENOVÉ PONUKY
-                # --------------------------------------
-
-                budget_documents = [
-                    doc
-                    for doc in documents
-                    if doc["document_type"]
-                    == "budget"
-                ]
-
-                if not budget_documents:
-
-                    st.warning(
-                        "Projekt nemá nahraný rozpočet "
-                        "alebo cenovú ponuku."
-                    )
-
-                    return
-
-                # --------------------------------------
-                # 1. AI POCHOPÍ RIADKY VŠETKÝCH HÁRKOV
-                # --------------------------------------
-
-                with st.spinner(
-                    "Čítam všetky hárky cenovej ponuky..."
+                if st.button(
+                    "1️⃣ Spracovať cenovú ponuku",
+                    use_container_width=True
                 ):
 
-                    budget_text = build_budget_text(
-                        budget_documents
-                    )
+                    with st.spinner(
+                        "Čítam všetky hárky cenovej ponuky..."
+                    ):
 
-                with st.spinner(
-                    "AI rozpoznáva práce, materiály, "
-                    "MJ a množstvá v cenovej ponuke..."
-                ):
+                        budget_text = build_budget_text(
+                            budget_documents
+                        )
 
-                    classified_budget_rows = (
-                        classify_budget_rows(
-                            budget_text
+                    with st.spinner(
+                        "AI rozpoznáva práce, materiály, "
+                        "MJ a množstvá v cenovej ponuke..."
+                    ):
+
+                        classified_budget_rows = (
+                            classify_budget_rows(
+                                budget_text
+                            )
+                        )
+
+                    aggregated_budget_rows = (
+                        aggregate_budget_rows(
+                            classified_budget_rows
                         )
                     )
 
-                # --------------------------------------
-                # 2. PYTHON SČÍTA ROVNAKÉ POLOŽKY
-                # --------------------------------------
+                    if not aggregated_budget_rows:
+
+                        st.error(
+                            "Z cenovej ponuky sa nepodarilo "
+                            "získať použiteľné položky."
+                        )
+
+                        return
+
+                    st.session_state[
+                        classified_budget_key
+                    ] = classified_budget_rows
+
+                    st.session_state[
+                        aggregated_budget_key
+                    ] = aggregated_budget_rows
+
+                    st.session_state.pop(
+                        excel_key,
+                        None
+                    )
+
+                    st.session_state.pop(
+                        f"ksp_rows_{project_id}",
+                        None
+                    )
+
+                    st.success(
+                        "Cenová ponuka bola spracovaná. "
+                        "Najprv skontroluj súčty nižšie."
+                    )
 
                 aggregated_budget_rows = (
-                    aggregate_budget_rows(
-                        classified_budget_rows
+                    st.session_state.get(
+                        aggregated_budget_key,
+                        []
                     )
                 )
 
-                if not aggregated_budget_rows:
+                if aggregated_budget_rows:
 
-                    st.error(
-                        "Z cenovej ponuky sa nepodarilo "
-                        "získať použiteľné položky."
+                    st.markdown(
+                        "#### 🔎 Agregovaný rozpočet pred KSP"
                     )
 
-                    return
-
-                st.session_state[
-                    f"classified_budget_{project_id}"
-                ] = classified_budget_rows
-
-                st.session_state[
-                    f"aggregated_budget_{project_id}"
-                ] = aggregated_budget_rows
-
-                aggregated_budget_text = (
-                    build_aggregated_budget_text(
-                        aggregated_budget_rows
+                    st.info(
+                        "Toto je medzivýsledok po prvom AI volaní. "
+                        "Zobrazenie tejto tabuľky už žiadne ďalšie "
+                        "AI volanie nerobí."
                     )
-                )
 
-                # --------------------------------------
-                # 3. OSTATNÉ PROJEKTOVÉ PODKLADY
-                # --------------------------------------
+                    budget_preview_rows = []
 
-                # Surový rozpočet už druhýkrát do hlavného
-                # AI volania neposielame. Je nahradený
-                # klasifikovaným a sčítaným zoznamom vyššie.
-                project_documents = [
-                    doc
-                    for doc in documents
-                    if doc["document_type"]
-                    in [
-                        "technical_report",
-                        "drawing",
-                        "other"
-                    ]
-                ]
+                    for item in aggregated_budget_rows:
 
-                ai_documents = (
-                    project_documents
-                    + [
-                        selected_reference
-                    ]
-                )
-
-                with st.spinner(
-                    "Načítavam technickú správu "
-                    "a referenčný KSP..."
-                ):
-
-                    project_text = (
-                        build_documents_text(
-                            ai_documents
+                        source_rows = item.get(
+                            "source_rows",
+                            []
                         )
-                    )
 
-                    project_text += (
-                        "\n\n"
-                        f"{aggregated_budget_text}"
-                    )
-
-                    project_text += (
-                        "\n\n"
-                        "=================================\n"
-                        "DÔLEŽITÉ PRAVIDLO PRE MNOŽSTVÁ\n"
-                        "=================================\n"
-                        "Množstvá vo výslednom KSP ber "
-                        "z AGREGOVANÝCH POLOŽIEK CENOVEJ "
-                        "PONUKY. Nesčítavaj ich znova a "
-                        "nevymýšľaj nové množstvá.\n"
-                    )
-
-                    project_text += (
-                        "\n\n"
-                        "=================================\n"
-                        "POKYNY POUŽÍVATEĽA\n"
-                        "=================================\n"
-                        f"{generation_instruction}"
-                    )
-
-                # --------------------------------------
-                # 4. HLAVNÉ AI VOLANIE - KSP
-                # --------------------------------------
-
-                with st.spinner(
-                    "AI priraďuje projekt k "
-                    "referenčnému KSP..."
-                ):
-
-                    ksp_rows = (
-                        generate_ksp_rows(
-                            project_text
+                        source_text = ", ".join(
+                            (
+                                f"{source.get('sheet', '')}"
+                                f" / r. {source.get('row_number', '')}"
+                            )
+                            for source in source_rows
                         )
+
+                        budget_preview_rows.append(
+                            {
+                                "group_key": item.get(
+                                    "group_key",
+                                    ""
+                                ),
+                                "Položka": item.get(
+                                    "item_name",
+                                    ""
+                                ),
+                                "Kategória": item.get(
+                                    "category",
+                                    ""
+                                ),
+                                "Materiál": item.get(
+                                    "material",
+                                    ""
+                                ),
+                                "Rozmer / DN": item.get(
+                                    "dimension",
+                                    ""
+                                ),
+                                "Množstvo": item.get(
+                                    "quantity",
+                                    ""
+                                ),
+                                "MJ": item.get(
+                                    "unit",
+                                    ""
+                                ),
+                                "Zdrojové hárky / riadky":
+                                    source_text
+                            }
+                        )
+
+                    st.dataframe(
+                        budget_preview_rows,
+                        use_container_width=True,
+                        hide_index=True
                     )
 
-                # --------------------------------------
-                # EXCEL
-                # --------------------------------------
+                    st.caption(
+                        "Skontroluj hlavne Množstvo, MJ a "
+                        "Zdrojové hárky / riadky. "
+                        "Ak tu sú súčty zlé, druhý krok nespúšťaj."
+                    )
 
-                with st.spinner(
-                    "Vytváram Excel podľa mustry..."
-                ):
+                    st.markdown(
+                        "#### Krok B – vytvoriť KSP"
+                    )
 
-                    template_bytes = (
-                        download_project_file(
-                            selected_template[
-                                "file_path"
+                    st.caption(
+                        "Až toto tlačidlo spustí druhé AI volanie "
+                        "na priradenie agregovaného rozpočtu "
+                        "k referenčnému KSP."
+                    )
+
+                    if st.button(
+                        "2️⃣ Pokračovať a vygenerovať KSP",
+                        use_container_width=True
+                    ):
+
+                        saved_header_now = (
+                            get_project_header(
+                                project_id
+                            )
+                        )
+
+                        if not saved_header_now:
+
+                            st.warning(
+                                "Najprv skontroluj a ulož "
+                                "hlavičku projektu."
+                            )
+
+                            return
+
+                        current_header = {
+                            "stavba":
+                                st.session_state.get(
+                                    f"header_stavba_{project_id}",
+                                    ""
+                                ),
+                            "objekt":
+                                st.session_state.get(
+                                    f"header_objekt_{project_id}",
+                                    ""
+                                ),
+                            "cast":
+                                st.session_state.get(
+                                    f"header_cast_{project_id}",
+                                    ""
+                                ),
+                            "zhotovitel":
+                                st.session_state.get(
+                                    f"header_zhotovitel_{project_id}",
+                                    ""
+                                ),
+                            "objednavatel":
+                                st.session_state.get(
+                                    f"header_objednavatel_{project_id}",
+                                    ""
+                                )
+                        }
+
+                        normalized_saved_header = {
+                            field:
+                                get_saved_header_value(
+                                    saved_header_now,
+                                    field
+                                )
+                            for field in [
+                                "stavba",
+                                "objekt",
+                                "cast",
+                                "zhotovitel",
+                                "objednavatel"
+                            ]
+                        }
+
+                        if (
+                            current_header
+                            != normalized_saved_header
+                        ):
+
+                            st.warning(
+                                "Hlavičku si zmenila. "
+                                "Najprv klikni na "
+                                "💾 Uložiť hlavičku projektu."
+                            )
+
+                            return
+
+                        final_metadata = {
+                            field: {
+                                "value":
+                                    normalized_saved_header[
+                                        field
+                                    ]
+                            }
+                            for field
+                            in normalized_saved_header
+                        }
+
+                        aggregated_budget_text = (
+                            build_aggregated_budget_text(
+                                aggregated_budget_rows
+                            )
+                        )
+
+                        project_documents = [
+                            doc
+                            for doc in documents
+                            if doc["document_type"]
+                            in [
+                                "technical_report",
+                                "drawing",
+                                "other"
+                            ]
+                        ]
+
+                        ai_documents = (
+                            project_documents
+                            + [
+                                selected_reference
                             ]
                         )
-                    )
 
-                    excel_bytes = (
-                        create_ksp_excel(
-                            template_bytes,
-                            ksp_rows,
-                            final_metadata
+                        with st.spinner(
+                            "Načítavam technickú správu "
+                            "a referenčný KSP..."
+                        ):
+
+                            project_text = (
+                                build_documents_text(
+                                    ai_documents
+                                )
+                            )
+
+                            project_text += (
+                                "\n\n"
+                                f"{aggregated_budget_text}"
+                            )
+
+                            project_text += (
+                                "\n\n"
+                                "=================================\n"
+                                "DÔLEŽITÉ PRAVIDLO PRE MNOŽSTVÁ\n"
+                                "=================================\n"
+                                "Množstvá vo výslednom KSP ber "
+                                "výhradne z AGREGOVANÝCH POLOŽIEK "
+                                "CENOVEJ PONUKY uvedených vyššie. "
+                                "Nesčítavaj ich znova, neber množstvá "
+                                "z referenčného KSP a nevymýšľaj "
+                                "nové množstvá.\n"
+                            )
+
+                            project_text += (
+                                "\n\n"
+                                "=================================\n"
+                                "POKYNY POUŽÍVATEĽA\n"
+                                "=================================\n"
+                                f"{generation_instruction}"
+                            )
+
+                        with st.spinner(
+                            "AI priraďuje projekt k "
+                            "referenčnému KSP..."
+                        ):
+
+                            ksp_rows = (
+                                generate_ksp_rows(
+                                    project_text
+                                )
+                            )
+
+                        with st.spinner(
+                            "Vytváram Excel podľa mustry..."
+                        ):
+
+                            template_bytes = (
+                                download_project_file(
+                                    selected_template[
+                                        "file_path"
+                                    ]
+                                )
+                            )
+
+                            excel_bytes = (
+                                create_ksp_excel(
+                                    template_bytes,
+                                    ksp_rows,
+                                    final_metadata
+                                )
+                            )
+
+                        st.session_state[
+                            excel_key
+                        ] = excel_bytes
+
+                        st.session_state[
+                            f"ksp_rows_{project_id}"
+                        ] = ksp_rows
+
+                        st.success(
+                            "KSP Excel bol vytvorený."
                         )
-                    )
-
-                st.session_state[
-                    excel_key
-                ] = excel_bytes
-
-                st.session_state[
-                    f"ksp_rows_{project_id}"
-                ] = ksp_rows
-
-                st.success(
-                    "KSP Excel bol vytvorený."
-                )
 
         # ==================================================
         # STIAHNUTIE EXCELU
