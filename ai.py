@@ -926,6 +926,32 @@ NESMIEŠ svojvoľne:
 
 NEVYPĹŇAJ polovicu tabuľky slovom OVERIŤ.
 
+
+===============================================
+PROCES / SKUPINA PRÁC
+===============================================
+
+Každý riadok musí mať aj pole "proces".
+
+Pole "proces" je nadradená skupina prác použitá
+ako samostatný deliaci riadok KSP.
+
+Pre kanalizačné stavby používaj podľa obsahu napríklad:
+
+- "Prípravné práce"
+- "Zemné práce"
+- "Armovacie práce"
+- "Konštrukčné vrstvy"
+- "Rúrové vedenie a ostatné konštrukcie"
+- "Skúšky a preberanie"
+
+Nevytváraj proces pre každý jednotlivý riadok.
+Viac po sebe idúcich subprocesov má patriť
+pod jeden spoločný proces.
+
+Ak referenčný KSP používa vlastné pomenovanie procesov,
+uprednostni pomenovanie z referenčného KSP.
+
 ===============================================
 P. JSON VÝSTUP
 ===============================================
@@ -941,6 +967,7 @@ Formát:
 
 [
   {
+    "proces": "",
     "poradie": "",
     "subproces": "",
     "mnozstvo": "",
@@ -959,6 +986,7 @@ Formát:
 
 Každý riadok musí obsahovať:
 
+proces
 poradie
 subproces
 mnozstvo
@@ -1026,6 +1054,7 @@ poznamka
     # ------------------------------------------
 
     required_fields = [
+        "proces",
         "poradie",
         "subproces",
         "mnozstvo",
