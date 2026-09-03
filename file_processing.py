@@ -1,6 +1,9 @@
 import io
 import re
+import math
 import unicodedata
+from difflib import SequenceMatcher
+
 import pandas as pd
 
 
@@ -25,16 +28,27 @@ def _normalize_text(value):
         if not unicodedata.combining(char)
     )
 
+    text = text.replace("×", "x")
+    text = text.replace("–", "-")
+    text = text.replace("—", "-")
+
     text = re.sub(
         r"\s+",
         " ",
         text
-    )
+    ).strip()
 
     return text
 
 
 def _normalize_code(value):
+    """
+    Zjednotí napr.:
+    631362442.S
+    631362442.s
+    631362442
+    """
+
     text = _normalize_text(
         value
     )
@@ -62,6 +76,12 @@ def _to_number(value):
         value,
         (int, float)
     ):
+        if isinstance(
+            value,
+            float
+        ) and math.isnan(value):
+            return None
+
         return float(value)
 
     text = str(
@@ -85,8 +105,33 @@ def _to_number(value):
         return None
 
 
+def _normalize_unit(value):
+    text = _normalize_text(
+        value
+    )
+
+    unit_map = {
+        "m²": "m2",
+        "m2": "m2",
+        "m³": "m3",
+        "m3": "m3",
+        "ks": "ks",
+        "kus": "ks",
+        "kusy": "ks",
+        "kompl": "kompl",
+        "komplet": "kompl",
+        "súbor": "subor",
+        "subor": "subor",
+    }
+
+    return unit_map.get(
+        text,
+        text
+    )
+
+
 # ==========================================================
-# PDF
+# ČÍTANIE PDF / DOCX / EXCEL PRE OSTATNÉ ČASTI APPKY
 # ==========================================================
 
 def extract_text_from_pdf(file_bytes):
@@ -118,10 +163,6 @@ def extract_text_from_pdf(file_bytes):
         parts
     )
 
-
-# ==========================================================
-# DOCX
-# ==========================================================
 
 def extract_text_from_docx(file_bytes):
     from docx import Document
@@ -163,10 +204,6 @@ def extract_text_from_docx(file_bytes):
         parts
     )
 
-
-# ==========================================================
-# EXCEL - TEXT PRE AI
-# ==========================================================
 
 def extract_excel_rows(file_bytes):
     sheets = pd.read_excel(
@@ -262,18 +299,22 @@ def extract_text_from_excel(file_bytes):
 
 
 # ==========================================================
-# ROZPOČET - 100 % PYTHON, BEZ AI
+# 1. VŠEOBECNÉ NAČÍTANIE ROZPOČTU
 # ==========================================================
 
 def extract_budget_items_python(file_bytes):
     """
-    Nájde v každom detailnom hárku tabuľku:
+    VŠEOBECNÁ funkcia.
+
+    V každom hárku hľadá tabuľku s hlavičkami:
     Kód | Popis | MJ | Množstvo
 
-    Rekapitulačné hárky zámerne preskočí,
-    aby sa množstvá nespočítali dvakrát.
+    Nezávisí od názvu projektu ani od typu stavby.
 
-    Táto funkcia NEVOLÁ AI.
+    Rekapitulácie preskočí, aby sa položky
+    nespočítali druhýkrát.
+
+    NEVOLÁ AI.
     """
 
     sheets = pd.read_excel(
@@ -293,16 +334,14 @@ def extract_budget_items_python(file_bytes):
             )
         )
 
-        if (
-            "rekapitul" in normalized_sheet_name
-            or "kryci list" in normalized_sheet_name
-        ):
+        # Rekapitulačný hárok zvyčajne obsahuje už
+        # súčty detailných hárkov.
+        if "rekapitul" in normalized_sheet_name:
             continue
 
         header_row_index = None
         header_columns = None
 
-        # Nájdeme riadok, kde sú všetky štyri hlavičky.
         for dataframe_index, row in dataframe.iterrows():
 
             normalized_values = [
@@ -312,19 +351,41 @@ def extract_budget_items_python(file_bytes):
 
             positions = {}
 
-            for target in [
-                "kod",
-                "popis",
-                "mj",
-                "mnozstvo"
-            ]:
+            aliases = {
+                "kod": {
+                    "kod",
+                    "kód"
+                },
+                "popis": {
+                    "popis",
+                    "nazov",
+                    "názov",
+                    "popis polozky",
+                    "nazov polozky"
+                },
+                "mj": {
+                    "mj",
+                    "m.j.",
+                    "merna jednotka",
+                    "merná jednotka"
+                },
+                "mnozstvo": {
+                    "mnozstvo",
+                    "množstvo"
+                }
+            }
 
-                if target in normalized_values:
-                    positions[target] = (
-                        normalized_values.index(
-                            target
-                        )
-                    )
+            for target, accepted in aliases.items():
+
+                for index, cell_text in enumerate(
+                    normalized_values
+                ):
+                    if cell_text in {
+                        _normalize_text(x)
+                        for x in accepted
+                    }:
+                        positions[target] = index
+                        break
 
             if len(positions) == 4:
                 header_row_index = int(
@@ -371,9 +432,11 @@ def extract_budget_items_python(file_bytes):
             if quantity is None:
                 continue
 
-            if pd.isna(code) or pd.isna(
-                description
-            ) or pd.isna(unit):
+            if (
+                pd.isna(code)
+                or pd.isna(description)
+                or pd.isna(unit)
+            ):
                 continue
 
             code = str(
@@ -408,7 +471,9 @@ def extract_budget_items_python(file_bytes):
                     ),
                     "code": code,
                     "description": description,
-                    "unit": unit,
+                    "unit": _normalize_unit(
+                        unit
+                    ),
                     "quantity": quantity
                 }
             )
@@ -416,537 +481,640 @@ def extract_budget_items_python(file_bytes):
     return items
 
 
-def _extract_dn(description):
+# ==========================================================
+# 2. TECHNICKÝ PODPIS POLOŽKY
+# ==========================================================
+
+def _remove_pricing_bands(text):
+    """
+    Odstraňuje iba typické CENOVÉ PÁSMA,
+    ktoré nemenia technický význam práce.
+
+    Príklady:
+    - do 100 m3
+    - nad 100 do 1000 m3
+    - od 100 do 1000 m3
+    - na vzdialenosť do 1000 m
+    - za každých ďalších 1000 m
+
+    Neodstraňuje DN, hrúbku, triedu betónu,
+    materiál, SN, PN, rozmer výrobku atď.
+    """
+
+    result = _normalize_text(
+        text
+    )
+
+    patterns = [
+        # objemové / plošné / hmotnostné pásma
+        r"\bnad\s+\d+(?:[.,]\d+)?\s+do\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|m|t|kg|ks)\b",
+        r"\bod\s+\d+(?:[.,]\d+)?\s+do\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|m|t|kg|ks)\b",
+        r"\bdo\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|t|kg|ks)\b",
+        r"\bnad\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|t|kg|ks)\b",
+
+        # vzdialenostné cenové pásma
+        r"\bna vzdialenost do\s+\d+(?:[.,]\d+)?\s*m\b",
+        r"\bna vzdialenost nad\s+\d+(?:[.,]\d+)?\s*do\s+\d+(?:[.,]\d+)?\s*m\b",
+        r"\bza kazdych dalsich a zacatych\s+\d+(?:[.,]\d+)?\s*m\b",
+
+        # plocha pracovného pruhu ako cenový interval
+        r"\bplochy do\s+\d+(?:[.,]\d+)?\s*m2\b",
+        r"\bplochy nad\s+\d+(?:[.,]\d+)?\s*do\s+\d+(?:[.,]\d+)?\s*m2\b",
+    ]
+
+    for pattern in patterns:
+        result = re.sub(
+            pattern,
+            "",
+            result,
+            flags=re.IGNORECASE
+        )
+
+    result = re.sub(
+        r"\s+",
+        " ",
+        result
+    ).strip(" ,;-")
+
+    return result
+
+
+def _extract_critical_parameters(description):
+    """
+    Všeobecný technický podpis.
+
+    Zachováva parametre, ktoré typicky znamenajú,
+    že položky sa NESMÚ zlúčiť.
+    """
+
     text = _normalize_text(
         description
     )
 
-    match = re.search(
-        r"\bdn\s*([0-9]+)",
-        text
+    parameters = []
+
+    regexes = [
+        # DN
+        (
+            "dn",
+            r"\bdn\s*([0-9]+)\b"
+        ),
+
+        # SN
+        (
+            "sn",
+            r"\bsn\s*([0-9]+)\b"
+        ),
+
+        # PN
+        (
+            "pn",
+            r"\bpn\s*([0-9]+(?:[.,][0-9]+)?)\b"
+        ),
+
+        # trieda betónu C 20/25
+        (
+            "beton",
+            r"\bc\s*([0-9]+)\s*/\s*([0-9]+)\b"
+        ),
+
+        # hrúbka
+        (
+            "hr",
+            r"\bhr\.?\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)\b"
+        ),
+
+        # priemer
+        (
+            "priemer",
+            r"\bpriemer(?:u)?\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?\b"
+        ),
+
+        # rozmery 150x150, 1500x1800x2300
+        (
+            "rozmer",
+            r"\b([0-9]+(?:[.,][0-9]+)?x[0-9]+(?:[.,][0-9]+)?(?:x[0-9]+(?:[.,][0-9]+)?)?)\s*(mm|cm|m)?\b"
+        ),
+
+        # pevnostné / triedové označenia bežné pri materiáloch
+        (
+            "xc",
+            r"\b(xc[0-9]+|xf[0-9]+|xd[0-9]+|xa[0-9]+)\b"
+        ),
+    ]
+
+    for name, pattern in regexes:
+
+        for match in re.finditer(
+            pattern,
+            text,
+            flags=re.IGNORECASE
+        ):
+            value = "|".join(
+                part
+                for part in match.groups()
+                if part is not None
+            )
+
+            parameters.append(
+                f"{name}:{value}"
+            )
+
+    # Materiálové a výrobkové tokeny.
+    # Toto nie je zoznam stavieb; iba technické slová,
+    # ktoré nesmú zmiznúť pri porovnaní.
+    material_tokens = [
+        "pvc-u",
+        "pvc",
+        "hdpe",
+        "pe100",
+        "pe80",
+        "pp",
+        "beton",
+        "zelezo",
+        "ocel",
+        "nerez",
+        "kari",
+        "eps",
+        "xps",
+        "mineralna vlna",
+        "sklenena vlna",
+        "tehla",
+        "porotherm",
+        "ytong",
+        "sadrokarton",
+        "asfalt",
+        "strkopiesok",
+        "piesok",
+        "kamenivo",
+        "makadam",
+        "drevo",
+        "hlinik",
+        "med",
+    ]
+
+    for token in material_tokens:
+
+        if token in text:
+            parameters.append(
+                f"mat:{token}"
+            )
+
+    return tuple(
+        sorted(
+            set(
+                parameters
+            )
+        )
     )
 
-    if not match:
-        return ""
 
-    return (
-        "DN"
-        + match.group(1)
-    )
+def _description_signature(description):
+    """
+    Vráti textový podpis po odstránení iba
+    oceňovacích pásiem.
+    """
 
-
-def _extract_concrete_class(description):
-    text = str(
+    text = _remove_pricing_bands(
         description
     )
 
-    match = re.search(
-        r"\bC\s*([0-9]+)\s*/\s*([0-9]+)\b",
-        text,
+    # drobné typografické rozdiely
+    text = re.sub(
+        r"[(),.;:]",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    return text
+
+
+def _description_similarity(
+    first,
+    second
+):
+    return SequenceMatcher(
+        None,
+        _description_signature(first),
+        _description_signature(second)
+    ).ratio()
+
+
+def _can_group_items(
+    first,
+    second
+):
+    """
+    Konzervatívne všeobecné rozhodovanie.
+
+    Položky spojíme iba keď:
+    - majú rovnakú MJ,
+    - nemajú konfliktné technické parametre,
+    - a text je rovnaký alebo veľmi podobný.
+
+    Pri neistote ich NEZLÚČIME.
+    """
+
+    if (
+        _normalize_unit(
+            first["unit"]
+        )
+        !=
+        _normalize_unit(
+            second["unit"]
+        )
+    ):
+        return False
+
+    first_params = (
+        _extract_critical_parameters(
+            first["description"]
+        )
+    )
+
+    second_params = (
+        _extract_critical_parameters(
+            second["description"]
+        )
+    )
+
+    # Ak majú oba technické parametre,
+    # musia byť zhodné.
+    if (
+        first_params
+        and second_params
+        and first_params != second_params
+    ):
+        return False
+
+    first_signature = (
+        _description_signature(
+            first["description"]
+        )
+    )
+
+    second_signature = (
+        _description_signature(
+            second["description"]
+        )
+    )
+
+    # Najbezpečnejší prípad.
+    if (
+        first_signature
+        == second_signature
+    ):
+        return True
+
+    similarity = (
+        _description_similarity(
+            first["description"],
+            second["description"]
+        )
+    )
+
+    first_code = (
+        _normalize_code(
+            first["code"]
+        )
+    )
+
+    second_code = (
+        _normalize_code(
+            second["code"]
+        )
+    )
+
+    # Rovnaký normalizovaný kód + veľmi podobný popis.
+    # To zachytí .S / .s / bez suffixu, ale neprebije
+    # rozdiel C12/15 vs C20/25, lebo ten blokuje parameter.
+    if (
+        first_code
+        and first_code == second_code
+        and similarity >= 0.78
+    ):
+        return True
+
+    # Bez rovnakého kódu iba pri takmer identickom texte.
+    if similarity >= 0.94:
+        return True
+
+    return False
+
+
+# ==========================================================
+# 3. VŠEOBECNÉ ZOSKUPOVANIE
+# ==========================================================
+
+def _make_generic_group_key(
+    representative
+):
+    signature = (
+        _description_signature(
+            representative[
+                "description"
+            ]
+        )
+    )
+
+    params = (
+        _extract_critical_parameters(
+            representative[
+                "description"
+            ]
+        )
+    )
+
+    safe_signature = re.sub(
+        r"[^a-z0-9]+",
+        "_",
+        signature
+    ).strip("_")
+
+    if len(
+        safe_signature
+    ) > 90:
+        safe_signature = (
+            safe_signature[:90]
+        )
+
+    param_text = "_".join(
+        re.sub(
+            r"[^a-z0-9]+",
+            "_",
+            param
+        ).strip("_")
+        for param in params
+    )
+
+    if param_text:
+        return (
+            safe_signature
+            + "__"
+            + param_text
+        )
+
+    return safe_signature
+
+
+def _convert_quantity_for_ksp(
+    description,
+    unit,
+    quantity
+):
+    """
+    Všeobecná, konzervatívna odvodená konverzia.
+
+    Zatiaľ prepočítava iba betónovú vrstvu:
+    m2 × explicitná hrúbka = m3.
+
+    Ak podmienky nie sú jednoznačné,
+    ponechá pôvodné množstvo a MJ.
+    """
+
+    normalized = _normalize_text(
+        description
+    )
+
+    normalized_unit = (
+        _normalize_unit(
+            unit
+        )
+    )
+
+    if normalized_unit != "m2":
+        return (
+            quantity,
+            normalized_unit
+        )
+
+    # Prevod m2 -> m3 robíme iba pri cementovom betóne,
+    # keď je v popise výslovne uvedená trieda Cxx/yy.
+    # Tým sa napr. asfaltový betón AC 11 O NESMIE
+    # omylom prepočítať na objem.
+    concrete_class = re.search(
+        r"\bc\s*[0-9]+\s*/\s*[0-9]+\b",
+        normalized,
         flags=re.IGNORECASE
     )
 
-    if not match:
-        return ""
-
-    return (
-        f"C{match.group(1)}/"
-        f"{match.group(2)}"
-    )
-
-
-def _extract_thickness_mm(description):
-    text = _normalize_text(
-        description
-    )
+    if not concrete_class:
+        return (
+            quantity,
+            normalized_unit
+        )
 
     match = re.search(
         r"\bhr\.?\s*([0-9]+(?:[.,][0-9]+)?)\s*mm\b",
-        text
+        normalized
     )
 
     if not match:
-        return None
+        return (
+            quantity,
+            normalized_unit
+        )
 
-    return float(
+    thickness_mm = float(
         match.group(1).replace(
             ",",
             "."
         )
     )
 
-
-def _budget_group_info(item):
-    """
-    Deterministicky vytvorí group_key.
-
-    Pri známych stavebných položkách zjednotí
-    iba rozdiely, ktoré nemajú meniť KSP položku.
-    Technicky rozdielne DN, materiály a triedy betónu
-    zostávajú oddelené.
-    """
-
-    description = item[
-        "description"
-    ]
-
-    unit = item[
-        "unit"
-    ]
-
-    quantity = float(
-        item["quantity"]
+    return (
+        quantity
+        * thickness_mm
+        / 1000.0,
+        "m3"
     )
-
-    normalized_description = (
-        _normalize_text(
-            description
-        )
-    )
-
-    normalized_code = (
-        _normalize_code(
-            item["code"]
-        )
-    )
-
-    result = {
-        "group_key": "",
-        "item_name": description,
-        "category": "praca",
-        "unit": unit,
-        "quantity": quantity,
-        "dimension": "",
-        "material": "",
-        "original_quantity": quantity,
-        "original_unit": unit
-    }
-
-    # ------------------------------------------------------
-    # ZEMNÉ PRÁCE
-    # ------------------------------------------------------
-
-    if (
-        "lozko pod potrubie" in normalized_description
-        and (
-            "piesku" in normalized_description
-            or "strkopiesku" in normalized_description
-        )
-    ):
-        result.update(
-            {
-                "group_key":
-                    "lozko_pod_potrubie_piesok_strkopiesok",
-                "item_name":
-                    "Lôžko pod potrubie, stoky a drobné objekty – piesok / štrkopiesok",
-                "material":
-                    "piesok / štrkopiesok"
-            }
-        )
-
-        return result
-
-    if (
-        normalized_description.startswith(
-            "obsyp potrubia"
-        )
-    ):
-        result.update(
-            {
-                "group_key":
-                    "obsyp_potrubia_sypanina",
-                "item_name":
-                    "Obsyp potrubia sypaninou z vhodných hornín",
-                "material":
-                    "sypanina"
-            }
-        )
-
-        return result
-
-    if (
-        normalized_description.startswith(
-            "zasyp sypaninou so zhutnenim"
-        )
-    ):
-        result.update(
-            {
-                "group_key":
-                    "zasyp_sypaninou_so_zhutnenim",
-                "item_name":
-                    "Zásyp sypaninou so zhutnením",
-                "material":
-                    "sypanina"
-            }
-        )
-
-        return result
-
-    # ------------------------------------------------------
-    # ARMOVANIE
-    # ------------------------------------------------------
-
-    if (
-        "kari" in normalized_description
-        and "8/8" in normalized_description
-        and "150x150" in normalized_description.replace(
-            " ",
-            ""
-        )
-    ):
-        result.update(
-            {
-                "group_key":
-                    "kari_8_8_150x150",
-                "item_name":
-                    "Výstuž mazanín zo sietí KARI 8/8 mm, oko 150×150 mm",
-                "material":
-                    "oceľová KARI sieť",
-                "dimension":
-                    "8/8 mm; 150×150 mm"
-            }
-        )
-
-        return result
-
-    # ------------------------------------------------------
-    # KOMUNIKÁCIE
-    # ------------------------------------------------------
-
-    if (
-        normalized_description.startswith(
-            "postrek asfaltovy spojovaci"
-        )
-    ):
-        result.update(
-            {
-                "group_key":
-                    "postrek_asfaltovy_spojovaci",
-                "item_name":
-                    "Postrek asfaltový spojovací bez posypu"
-            }
-        )
-
-        return result
-
-    if (
-        "asfaltovy beton" in normalized_description
-        and "ac 11 o" in normalized_description
-    ):
-        result.update(
-            {
-                "group_key":
-                    "asfalt_ac11o_obrusna_60mm",
-                "item_name":
-                    "Asfaltová zmes AC 11 O, obrusná vrstva po zhutnení hr. 60 mm",
-                "material":
-                    "asfaltový betón AC 11 O",
-                "dimension":
-                    "60 mm"
-            }
-        )
-
-        return result
-
-    # Podkladový betón - rovnaký cenníkový kód môže mať
-    # rôzne triedy betónu, preto rozhoduje aj popis.
-    if (
-        "podklad z podkladoveho betonu"
-        in normalized_description
-    ):
-        concrete_class = (
-            _extract_concrete_class(
-                description
-            )
-        )
-
-        thickness_mm = (
-            _extract_thickness_mm(
-                description
-            )
-        )
-
-        group_key = (
-            "podkladovy_beton_"
-            + (
-                concrete_class
-                .lower()
-                .replace("/", "_")
-                if concrete_class
-                else "bez_triedy"
-            )
-        )
-
-        if thickness_mm is not None:
-            group_key += (
-                f"_{thickness_mm:g}mm"
-            )
-
-        result.update(
-            {
-                "group_key":
-                    group_key,
-                "item_name":
-                    (
-                        "Podkladový betón "
-                        + (
-                            concrete_class
-                            if concrete_class
-                            else ""
-                        )
-                        + (
-                            f", hr. {thickness_mm:g} mm"
-                            if thickness_mm is not None
-                            else ""
-                        )
-                    ).strip(
-                        ", "
-                    ),
-                "material":
-                    concrete_class,
-                "dimension":
-                    (
-                        f"{thickness_mm:g} mm"
-                        if thickness_mm is not None
-                        else ""
-                    )
-            }
-        )
-
-        # Pre KSP podkladový betón vyjadrujeme objemom,
-        # ak rozpočet uvádza plochu a hrúbku.
-        if (
-            _normalize_text(
-                unit
-            ) == "m2"
-            and thickness_mm is not None
-        ):
-            result[
-                "quantity"
-            ] = (
-                quantity
-                * thickness_mm
-                / 1000.0
-            )
-
-            result[
-                "unit"
-            ] = "m3"
-
-        return result
-
-    # ------------------------------------------------------
-    # POTRUBIA
-    # ------------------------------------------------------
-
-    if (
-        "potrubie kanalizacne pvc-u"
-        in normalized_description
-        and "grav" in normalized_description
-    ):
-        dn = _extract_dn(
-            description
-        )
-
-        result.update(
-            {
-                "group_key":
-                    (
-                        "potrubie_pvcu_gravitacne_"
-                        + (
-                            dn.lower()
-                            if dn
-                            else normalized_code
-                        )
-                    ),
-                "item_name":
-                    (
-                        "Gravitačné kanalizačné potrubie PVC-U "
-                        + dn
-                    ).strip(),
-                "material":
-                    "PVC-U",
-                "dimension":
-                    dn
-            }
-        )
-
-        return result
-
-    if (
-        (
-            "pe100" in normalized_description
-            or "hdpe" in normalized_description
-        )
-        and "potrub" in normalized_description
-    ):
-        dn = _extract_dn(
-            description
-        )
-
-        result.update(
-            {
-                "group_key":
-                    (
-                        "potrubie_hdpe_pe100_"
-                        + (
-                            dn.lower()
-                            if dn
-                            else normalized_code
-                        )
-                    ),
-                "item_name":
-                    (
-                        "Výtlačné potrubie HDPE PE100 "
-                        + dn
-                    ).strip(),
-                "material":
-                    "HDPE PE100",
-                "dimension":
-                    dn
-            }
-        )
-
-        return result
-
-    # ------------------------------------------------------
-    # DEFAULT - PRESNÁ TECHNICKÁ POLOŽKA
-    # ------------------------------------------------------
-
-    # Tu zámerne kombinujeme normalizovaný kód AJ popis.
-    # Rovnaký kód s rozdielnou triedou/materiálom sa nespojí.
-    technical_description = re.sub(
-        r"\s+",
-        "_",
-        normalized_description
-    )
-
-    technical_description = re.sub(
-        r"[^a-z0-9_/-]",
-        "",
-        technical_description
-    )
-
-    technical_description = (
-        technical_description[:120]
-    )
-
-    result[
-        "group_key"
-    ] = (
-        f"{normalized_code}__"
-        f"{technical_description}"
-    )
-
-    return result
 
 
 def aggregate_budget_items_python(items):
     """
-    Sčíta položky, ktoré boli deterministicky
-    zaradené cez _budget_group_info().
+    Všeobecné zoskupovanie bez AI.
 
-    Žiadne AI volanie.
+    Algoritmus:
+    1. ide položku po položke,
+    2. hľadá existujúcu technicky zhodnú skupinu,
+    3. ak si nie je istý, vytvorí novú skupinu,
+    4. Python sčíta iba potvrdené zhody.
     """
 
-    grouped = {}
+    groups = []
 
     for item in items:
 
-        group_info = (
-            _budget_group_info(
-                item
-            )
-        )
+        matching_group = None
 
-        group_key = (
-            group_info[
-                "group_key"
-            ]
-        )
+        for group in groups:
 
-        unit = group_info[
-            "unit"
-        ]
+            if _can_group_items(
+                item,
+                group["representative"]
+            ):
+                matching_group = group
+                break
 
-        key = (
-            group_key,
-            _normalize_text(
-                unit
-            )
-        )
+        if matching_group is None:
 
-        if key not in grouped:
-
-            grouped[key] = {
-                "group_key":
-                    group_key,
-                "item_name":
-                    group_info[
-                        "item_name"
-                    ],
-                "category":
-                    group_info[
-                        "category"
-                    ],
-                "unit":
-                    unit,
-                "quantity":
-                    0.0,
-                "dimension":
-                    group_info[
-                        "dimension"
-                    ],
-                "material":
-                    group_info[
-                        "material"
-                    ],
-                "source_rows":
+            matching_group = {
+                "representative":
+                    item,
+                "members":
                     []
             }
 
-        grouped[key][
-            "quantity"
-        ] += float(
-            group_info[
-                "quantity"
+            groups.append(
+                matching_group
+            )
+
+        matching_group[
+            "members"
+        ].append(
+            item
+        )
+
+    result = []
+
+    for group in groups:
+
+        representative = (
+            group[
+                "representative"
             ]
         )
 
-        grouped[key][
-            "source_rows"
-        ].append(
-            {
-                "sheet":
-                    item[
-                        "sheet"
-                    ],
-                "row_number":
-                    item[
-                        "row_number"
-                    ],
-                "code":
-                    item[
-                        "code"
-                    ],
-                "description":
-                    item[
+        total_quantity = 0.0
+        result_unit = None
+        source_rows = []
+
+        for member in group[
+            "members"
+        ]:
+
+            converted_quantity, converted_unit = (
+                _convert_quantity_for_ksp(
+                    member[
                         "description"
                     ],
-                "original_quantity":
-                    item[
-                        "quantity"
-                    ],
-                "original_unit":
-                    item[
+                    member[
                         "unit"
+                    ],
+                    member[
+                        "quantity"
                     ]
-            }
+                )
+            )
+
+            # Ak by sa v skupine po odvodení objavili
+            # rozdielne MJ, radšej pôvodné množstvo neprepisujeme.
+            if result_unit is None:
+                result_unit = (
+                    converted_unit
+                )
+
+            if (
+                converted_unit
+                != result_unit
+            ):
+                converted_quantity = (
+                    member[
+                        "quantity"
+                    ]
+                )
+
+                converted_unit = (
+                    _normalize_unit(
+                        member[
+                            "unit"
+                        ]
+                    )
+                )
+
+            total_quantity += float(
+                converted_quantity
+            )
+
+            source_rows.append(
+                {
+                    "sheet":
+                        member[
+                            "sheet"
+                        ],
+                    "row_number":
+                        member[
+                            "row_number"
+                        ],
+                    "code":
+                        member[
+                            "code"
+                        ],
+                    "description":
+                        member[
+                            "description"
+                        ],
+                    "original_quantity":
+                        member[
+                            "quantity"
+                        ],
+                    "original_unit":
+                        member[
+                            "unit"
+                        ]
+                }
+            )
+
+        params = (
+            _extract_critical_parameters(
+                representative[
+                    "description"
+                ]
+            )
         )
 
-    result = list(
-        grouped.values()
-    )
+        result.append(
+            {
+                "group_key":
+                    _make_generic_group_key(
+                        representative
+                    ),
+                "item_name":
+                    representative[
+                        "description"
+                    ],
+                "category":
+                    "stavebna_polozka",
+                "unit":
+                    result_unit
+                    or _normalize_unit(
+                        representative[
+                            "unit"
+                        ]
+                    ),
+                "quantity":
+                    round(
+                        total_quantity,
+                        6
+                    ),
+                "dimension":
+                    "; ".join(
+                        params
+                    ),
+                "material":
+                    "",
+                "source_rows":
+                    source_rows,
+                "grouping_method":
+                    "python_generic"
+            }
+        )
 
     result.sort(
         key=lambda item: (
@@ -971,28 +1139,18 @@ def aggregate_budget_items_python(items):
         )
     )
 
-    # Zaokrúhlenie iba na odstránenie floating-point šumu.
-    for item in result:
-        item["quantity"] = round(
-            float(
-                item["quantity"]
-            ),
-            6
-        )
-
     return result
 
 
 def process_budget_python(file_bytes):
     """
-    Hlavná funkcia prvého kroku.
+    Verejná funkcia pre appku.
 
-    1. prečíta všetky detailné hárky,
-    2. nájde Kód/Popis/MJ/Množstvo,
-    3. zoskupí položky,
-    4. presne sčíta množstvá.
-
-    NEVOLÁ OPENAI API.
+    - všetky detailné hárky
+    - bez AI
+    - všeobecné stavebné položky
+    - konzervatívne zoskupovanie
+    - Python sčítanie
     """
 
     items = extract_budget_items_python(
@@ -1008,8 +1166,10 @@ def merge_aggregated_budget_rows(
     aggregated_lists
 ):
     """
-    Ak je v projekte viac rozpočtových Excelov,
-    spojí už spočítané výsledky bez AI.
+    Spojí výsledky z viacerých rozpočtových Excelov.
+
+    Znova konzervatívne:
+    rovnaký group_key + rovnaká MJ.
     """
 
     grouped = {}
@@ -1025,7 +1185,7 @@ def merge_aggregated_budget_rows(
                         ""
                     )
                 ),
-                _normalize_text(
+                _normalize_unit(
                     item.get(
                         "unit",
                         ""
@@ -1068,7 +1228,12 @@ def merge_aggregated_budget_rows(
                             ""
                         ),
                     "source_rows":
-                        []
+                        [],
+                    "grouping_method":
+                        item.get(
+                            "grouping_method",
+                            "python_generic"
+                        )
                 }
 
             grouped[key][
@@ -1104,14 +1269,14 @@ def merge_aggregated_budget_rows(
 
 
 # ==========================================================
-# STARŠIA AI AGREGÁCIA - PONECHANÁ PRE KOMPATIBILITU
+# SPÄTNÁ KOMPATIBILITA
 # ==========================================================
 
 def aggregate_budget_rows(classified_rows):
     """
-    Ponechané len kvôli spätnej kompatibilite.
-    Nový project_detail.py túto funkciu na prvý krok
-    už nepoužíva.
+    Staršia funkcia ostáva iba preto,
+    aby prípadný starší import appku nezrútil.
+    Nový rozpočet ju už nepotrebuje.
     """
 
     if not isinstance(
@@ -1120,182 +1285,7 @@ def aggregate_budget_rows(classified_rows):
     ):
         return []
 
-    grouped = {}
-    standalone = []
-
-    for item in classified_rows:
-
-        if not isinstance(
-            item,
-            dict
-        ):
-            continue
-
-        include = item.get(
-            "include",
-            False
-        )
-
-        if isinstance(
-            include,
-            str
-        ):
-            include = (
-                include.strip().lower()
-                in {
-                    "true",
-                    "1",
-                    "yes",
-                    "áno",
-                    "ano"
-                }
-            )
-
-        if not include:
-            continue
-
-        group_key = str(
-            item.get(
-                "group_key",
-                ""
-            )
-            or ""
-        ).strip()
-
-        unit = str(
-            item.get(
-                "unit",
-                ""
-            )
-            or ""
-        ).strip()
-
-        quantity = item.get(
-            "quantity"
-        )
-
-        source_row = {
-            "sheet":
-                item.get(
-                    "sheet",
-                    ""
-                ),
-            "row_number":
-                item.get(
-                    "row_number",
-                    ""
-                )
-        }
-
-        is_number = (
-            isinstance(
-                quantity,
-                (int, float)
-            )
-            and not isinstance(
-                quantity,
-                bool
-            )
-        )
-
-        if (
-            group_key
-            and is_number
-        ):
-
-            key = (
-                group_key,
-                unit.lower()
-            )
-
-            if key not in grouped:
-
-                grouped[key] = {
-                    "group_key":
-                        group_key,
-                    "item_name":
-                        item.get(
-                            "item_name",
-                            ""
-                        ),
-                    "category":
-                        item.get(
-                            "category",
-                            ""
-                        ),
-                    "unit":
-                        unit,
-                    "quantity":
-                        0.0,
-                    "dimension":
-                        item.get(
-                            "dimension",
-                            ""
-                        ),
-                    "material":
-                        item.get(
-                            "material",
-                            ""
-                        ),
-                    "source_rows":
-                        []
-                }
-
-            grouped[key][
-                "quantity"
-            ] += float(
-                quantity
-            )
-
-            grouped[key][
-                "source_rows"
-            ].append(
-                source_row
-            )
-
-        else:
-
-            standalone.append(
-                {
-                    "group_key":
-                        group_key,
-                    "item_name":
-                        item.get(
-                            "item_name",
-                            ""
-                        ),
-                    "category":
-                        item.get(
-                            "category",
-                            ""
-                        ),
-                    "unit":
-                        unit,
-                    "quantity":
-                        quantity,
-                    "dimension":
-                        item.get(
-                            "dimension",
-                            ""
-                        ),
-                    "material":
-                        item.get(
-                            "material",
-                            ""
-                        ),
-                    "source_rows":
-                        [
-                            source_row
-                        ]
-                }
-            )
-
-    return (
-        list(
-            grouped.values()
-        )
-        + standalone
-    )
+    return classified_rows
 
 
 # ==========================================================
@@ -1304,9 +1294,8 @@ def aggregate_budget_rows(classified_rows):
 
 def extract_text_from_file(arg1, arg2):
     """
-    Podporuje obe poradia argumentov:
+    Podporuje obe poradia:
     extract_text_from_file(file_bytes, file_name)
-    aj
     extract_text_from_file(file_name, file_bytes)
     """
 
