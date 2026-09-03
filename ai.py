@@ -952,6 +952,84 @@ pod jeden spoločný proces.
 Ak referenčný KSP používa vlastné pomenovanie procesov,
 uprednostni pomenovanie z referenčného KSP.
 
+
+===============================================
+Q. STAV RIADKU PRE ODBORNÚ KONTROLU
+===============================================
+
+Každý výsledný riadok musí mať aj:
+
+- "status"
+- "status_reason"
+- "legal_basis"
+
+Povolené hodnoty "status":
+
+KEEP
+REMOVE_CANDIDATE
+VERIFY
+
+Použi ich takto:
+
+KEEP
+= riadok patrí do výsledného KSP.
+Použi najmä ak:
+- kontrola/skúška vyplýva z projektu,
+- je potrebná pre daný rozsah prác,
+- alebo je jej potreba podložená právnym predpisom,
+  záväznou technickou požiadavkou či relevantným
+  referenčným KSP.
+
+REMOVE_CANDIDATE
+= riadok NEVYMAŽ.
+Ponechaj ho vo výsledku, ale označ ako kandidáta
+na vyradenie, ak:
+- práca je v projekte relevantná,
+- referenčný KSP túto skúšku/kontrolu obsahuje,
+- ale nenašiel si dostatočný podklad, že práve táto
+  samostatná skúška je pre nový projekt potrebná,
+- a nejde len o chýbajúcu informáciu.
+
+VERIFY
+= riadok NEVYMAŽ.
+Použi, ak sa z oficiálnych dostupných zdrojov
+nedá spoľahlivo rozhodnúť, či skúška alebo kontrola
+musí byť vykonaná.
+
+DÔLEŽITÉ:
+- Ak daná práca alebo materiál v novom projekte
+  vôbec nie sú, riadok nevytváraj.
+- REMOVE_CANDIDATE nie je právny záver.
+  Je to upozornenie pre odbornú kontrolu.
+- VERIFY používaj pri skutočnej neistote.
+- Neoznačuj bežnú vizuálnu alebo dokladovú kontrolu
+  na vyradenie len preto, že nie je nákladná skúška.
+
+"status_reason":
+napíš jednou krátkou vetou dôvod označenia.
+
+"legal_basis":
+uveď stručne podklad, ktorý si skutočne našiel
+alebo použil, napríklad:
+- "Zákon č. 442/2002 Z. z. § 11"
+- "Vyhláška č. 684/2006 Z. z."
+- "Zákon č. 133/2013 Z. z."
+- "PD"
+- "Referenčný KSP"
+
+Nevymýšľaj paragraf alebo číslo normy.
+Ak si právny podklad neoveril, nechaj legal_basis
+prázdne alebo uveď len "Referenčný KSP".
+
+Pri verejnej kanalizácii venuj osobitnú pozornosť
+aktuálnemu zneniu:
+- zákona č. 442/2002 Z. z.,
+- vyhlášky č. 684/2006 Z. z.,
+- zákona č. 133/2013 Z. z. pri stavebných výrobkoch.
+
+Pred použitím právneho záveru over aktuálne znenie
+v povolených oficiálnych webových zdrojoch.
+
 ===============================================
 P. JSON VÝSTUP
 ===============================================
@@ -980,7 +1058,10 @@ Formát:
     "vykona": "",
     "tolerancia": "",
     "dokumentovanie": "",
-    "poznamka": ""
+    "poznamka": "",
+    "status": "KEEP",
+    "status_reason": "",
+    "legal_basis": ""
   }
 ]
 
@@ -1000,6 +1081,9 @@ vykona
 tolerancia
 dokumentovanie
 poznamka
+status
+status_reason
+legal_basis
 """,
 
         input=text
@@ -1067,7 +1151,10 @@ poznamka
         "vykona",
         "tolerancia",
         "dokumentovanie",
-        "poznamka"
+        "poznamka",
+        "status",
+        "status_reason",
+        "legal_basis"
     ]
 
     clean_rows = []
@@ -1093,6 +1180,23 @@ poznamka
                 value = ""
 
             clean_row[field] = value
+
+        status = str(
+            clean_row.get(
+                "status",
+                "KEEP"
+            )
+            or "KEEP"
+        ).strip().upper()
+
+        if status not in {
+            "KEEP",
+            "REMOVE_CANDIDATE",
+            "VERIFY"
+        }:
+            status = "VERIFY"
+
+        clean_row["status"] = status
 
         clean_rows.append(
             clean_row
