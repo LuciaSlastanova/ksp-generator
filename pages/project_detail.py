@@ -10,11 +10,15 @@ from database import (
     get_project_header
 )
 
-from file_processing import extract_text_from_file
+from file_processing import (
+    extract_text_from_file,
+    aggregate_budget_rows
+)
 
 from ai import (
     generate_ksp_rows,
-    extract_project_metadata
+    extract_project_metadata,
+    classify_budget_rows
 )
 
 from excel_export import create_ksp_excel
@@ -52,6 +56,96 @@ Súbor: {doc['file_name']}
         )
 
     return "\n".join(text_parts)
+
+
+def build_budget_text(documents):
+    """
+    Načíta všetky rozpočty / cenové ponuky.
+    Excel sa načíta zo všetkých hárkov.
+    """
+
+    text_parts = []
+
+    for doc in documents:
+
+        file_bytes = download_project_file(
+            doc["file_path"]
+        )
+
+        extracted_text = extract_text_from_file(
+            doc["file_name"],
+            file_bytes
+        )
+
+        text_parts.append(
+            f"""
+========================================
+ROZPOČET / CENOVÁ PONUKA
+Súbor: {doc['file_name']}
+========================================
+
+{extracted_text}
+"""
+        )
+
+    return "\n".join(text_parts)
+
+
+def build_aggregated_budget_text(aggregated_rows):
+    """
+    Prevedie už klasifikované a sčítané položky
+    rozpočtu na jednoznačný text pre tvorbu KSP.
+    """
+
+    text_parts = [
+        """
+========================================
+AGREGOVANÉ POLOŽKY CENOVEJ PONUKY
+========================================
+
+Tento zoznam vznikol z VŠETKÝCH hárkov cenovej ponuky.
+Rovnaké položky boli sčítané podľa group_key + MJ.
+
+PRE MNOŽSTVÁ A ROZSAH PRÁC JE TENTO ZOZNAM
+HLAVNÝM ZDROJOM PRE TVORBU KSP.
+"""
+    ]
+
+    for index, item in enumerate(
+        aggregated_rows,
+        start=1
+    ):
+
+        source_rows = item.get(
+            "source_rows",
+            []
+        )
+
+        source_text = ", ".join(
+            (
+                f"{source.get('sheet', '')}"
+                f"/riadok {source.get('row_number', '')}"
+            )
+            for source in source_rows
+        )
+
+        text_parts.append(
+            (
+                f"{index}. "
+                f"group_key={item.get('group_key', '')} | "
+                f"položka={item.get('item_name', '')} | "
+                f"kategória={item.get('category', '')} | "
+                f"materiál={item.get('material', '')} | "
+                f"rozmer={item.get('dimension', '')} | "
+                f"množstvo={item.get('quantity', '')} | "
+                f"MJ={item.get('unit', '')} | "
+                f"zdroj={source_text}"
+            )
+        )
+
+    return "\n".join(
+        text_parts
+    )
 
 
 def get_saved_header_value(saved_header, field):
@@ -824,16 +918,94 @@ def show_project_detail():
                 }
 
                 # --------------------------------------
-                # PROJEKTOVÉ PODKLADY PRE AI
+                # ROZPOČTY / CENOVÉ PONUKY
                 # --------------------------------------
 
+                budget_documents = [
+                    doc
+                    for doc in documents
+                    if doc["document_type"]
+                    == "budget"
+                ]
+
+                if not budget_documents:
+
+                    st.warning(
+                        "Projekt nemá nahraný rozpočet "
+                        "alebo cenovú ponuku."
+                    )
+
+                    return
+
+                # --------------------------------------
+                # 1. AI POCHOPÍ RIADKY VŠETKÝCH HÁRKOV
+                # --------------------------------------
+
+                with st.spinner(
+                    "Čítam všetky hárky cenovej ponuky..."
+                ):
+
+                    budget_text = build_budget_text(
+                        budget_documents
+                    )
+
+                with st.spinner(
+                    "AI rozpoznáva práce, materiály, "
+                    "MJ a množstvá v cenovej ponuke..."
+                ):
+
+                    classified_budget_rows = (
+                        classify_budget_rows(
+                            budget_text
+                        )
+                    )
+
+                # --------------------------------------
+                # 2. PYTHON SČÍTA ROVNAKÉ POLOŽKY
+                # --------------------------------------
+
+                aggregated_budget_rows = (
+                    aggregate_budget_rows(
+                        classified_budget_rows
+                    )
+                )
+
+                if not aggregated_budget_rows:
+
+                    st.error(
+                        "Z cenovej ponuky sa nepodarilo "
+                        "získať použiteľné položky."
+                    )
+
+                    return
+
+                st.session_state[
+                    f"classified_budget_{project_id}"
+                ] = classified_budget_rows
+
+                st.session_state[
+                    f"aggregated_budget_{project_id}"
+                ] = aggregated_budget_rows
+
+                aggregated_budget_text = (
+                    build_aggregated_budget_text(
+                        aggregated_budget_rows
+                    )
+                )
+
+                # --------------------------------------
+                # 3. OSTATNÉ PROJEKTOVÉ PODKLADY
+                # --------------------------------------
+
+                # Surový rozpočet už druhýkrát do hlavného
+                # AI volania neposielame. Je nahradený
+                # klasifikovaným a sčítaným zoznamom vyššie.
                 project_documents = [
                     doc
                     for doc in documents
                     if doc["document_type"]
                     in [
                         "technical_report",
-                        "budget",
                         "drawing",
                         "other"
                     ]
@@ -847,13 +1019,30 @@ def show_project_detail():
                 )
 
                 with st.spinner(
-                    "Načítavam projektové podklady..."
+                    "Načítavam technickú správu "
+                    "a referenčný KSP..."
                 ):
 
                     project_text = (
                         build_documents_text(
                             ai_documents
                         )
+                    )
+
+                    project_text += (
+                        "\n\n"
+                        f"{aggregated_budget_text}"
+                    )
+
+                    project_text += (
+                        "\n\n"
+                        "=================================\n"
+                        "DÔLEŽITÉ PRAVIDLO PRE MNOŽSTVÁ\n"
+                        "=================================\n"
+                        "Množstvá vo výslednom KSP ber "
+                        "z AGREGOVANÝCH POLOŽIEK CENOVEJ "
+                        "PONUKY. Nesčítavaj ich znova a "
+                        "nevymýšľaj nové množstvá.\n"
                     )
 
                     project_text += (
@@ -865,11 +1054,12 @@ def show_project_detail():
                     )
 
                 # --------------------------------------
-                # HLAVNÉ AI VOLANIE
+                # 4. HLAVNÉ AI VOLANIE - KSP
                 # --------------------------------------
 
                 with st.spinner(
-                    "AI pripravuje riadky KSP..."
+                    "AI priraďuje projekt k "
+                    "referenčnému KSP..."
                 ):
 
                     ksp_rows = (
