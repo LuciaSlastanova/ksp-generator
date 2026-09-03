@@ -625,22 +625,35 @@ z jeho relevantných riadkov.
 
 Ak nový projekt obsahuje rovnaký alebo podobný
 druh práce ako referenčný KSP,
-PREVEZMI z referenčného KSP:
+PREVEZMI z referenčného KSP CELÝ RELEVANTNÝ RIADOK:
 
-- subproces
 - druh kontroly
 - spôsob kontroly
 - kritérium
 - normu alebo predpis
 - početnosť
-- celkový spôsob kontroly
+- celkový počet / spôsob kontroly
 - zodpovednosť
 - kto kontrolu vykonáva
 - toleranciu
 - dokumentovanie
+- poznámku, ak je technicky relevantná
 
-NEPÍŠ OVERIŤ,
-ak sa údaj nachádza v referenčnom KSP.
+Nesmieš prebrať iba časť riadku a ostatné polia
+nechať prázdne.
+
+Ak je napríklad v referenčnom riadku:
+kriterium = "PD"
+zodpoveda = "SV"
+vykona = "SV"
+tolerancia = "podľa PD"
+dokumentovanie = "zápis v SD"
+
+potom tieto hodnoty normálne prevezmi.
+
+NEPÍŠ OVERIŤ a NENECHÁVAJ PRÁZDNE POLE,
+ak sa údaj nachádza v relevantnom riadku
+referenčného KSP.
 
 Ak napríklad referenčný KSP obsahuje:
 
@@ -727,18 +740,36 @@ z relevantného riadku referenčného KSP.
 E. MNOŽSTVO
 ===============================================
 
-Množstvo ber z:
+Množstvo ber z AGREGOVANÝCH POLOŽIEK
+CENOVEJ PONUKY, ktoré sú vložené do vstupu.
 
-1. rozpočtu
-2. technickej správy
-3. výkresov
+Tieto agregované množstvá už boli spočítané
+Python kódom zo všetkých detailných hárkov.
 
-Ak množstvo nie je jednoznačne dostupné,
-môže byť prázdne.
+Preto:
+
+- NESČÍTAVAJ ich znova,
+- NEBER množstvo z referenčného KSP,
+- NEBER množstvo z technickej správy,
+  ak už existuje agregovaná položka,
+- NEVYMÝŠĽAJ množstvo,
+- zachovaj presnú MJ.
+
+Ak je agregovaná položka napríklad:
+
+položka=Lôžko pod potrubie...
+množstvo=504.618
+MJ=m3
+
+výsledný KSP musí mať:
+
+mnozstvo = "504,618 m3"
+
+Ak množstvo pre konkrétny subproces
+v agregovanom zozname neexistuje,
+pole môže zostať prázdne.
 
 NEPÍŠ automaticky OVERIŤ.
-
-Nevymýšľaj množstvo.
 
 ===============================================
 F. OVERIŤ - VEĽMI DÔLEŽITÉ
@@ -875,10 +906,26 @@ L. POČETNOSŤ, TOLERANCIE A DOKUMENTOVANIE
 Tieto údaje majú primárne pochádzať
 z REFERENČNÉHO KSP.
 
-Ak sú v relevantnom riadku uvedené,
-PREVEZMI ICH.
+Pri každom výslednom riadku urob kontrolu:
 
-NENAHRÁDZAJ ich textom OVERIŤ.
+1. nájdi relevantný riadok v referenčnom KSP,
+2. prevezmi z neho kritérium,
+3. prevezmi početnosť,
+4. prevezmi celkový počet / spôsob kontroly,
+5. prevezmi zodpovednosť,
+6. prevezmi kto kontrolu vykoná,
+7. prevezmi toleranciu,
+8. prevezmi dokumentovanie.
+
+Ak je niektorá z týchto hodnôt
+v referenčnom riadku vyplnená,
+NESMIE zostať vo výsledku prázdna.
+
+Prázdne pole je prípustné iba vtedy,
+ak je prázdne aj v relevantnom referenčnom riadku
+a projekt neposkytuje konkrétnejšiu hodnotu.
+
+NENAHRÁDZAJ tieto údaje textom OVERIŤ.
 
 ===============================================
 M. KONTROLY MATERIÁLOV
@@ -908,6 +955,71 @@ upravený pre nový projekt.
 
 Nesmie pôsobiť ako úplne nový KSP
 vytvorený nezávisle od referencie.
+
+===============================================
+N2. KONTROLA ÚPLNOSTI PRED VÝSTUPOM
+===============================================
+
+Pred vytvorením JSON výstupu urob ešte jednu
+vnútornú kontrolu úplnosti.
+
+A. KONTROLA AGREGOVANÉHO ROZPOČTU
+
+Prejdi všetky AGREGOVANÉ POLOŽKY CENOVEJ PONUKY.
+
+Ak položka predstavuje prácu, materiál alebo výrobok,
+pre ktorý existuje relevantná kontrola alebo skúška
+v referenčnom KSP, musí byť v novom KSP zastúpená.
+
+Nesmieš relevantnú agregovanú položku potichu vynechať.
+
+Ak je jedna kontrola spoločná pre viac agregovaných
+položiek rovnakého technického typu, môžeš ich zlúčiť
+iba ak tým nestratíš rozdielne:
+- materiály,
+- DN,
+- triedy,
+- rozmery,
+- MJ,
+- požiadavky na kontrolu.
+
+B. KONTROLA VYPLNENIA RIADKOV
+
+Pre každý výsledný riadok skontroluj tieto polia:
+
+- druh_kontroly
+- sposob_kontroly
+- kriterium
+- pocetnost
+- celkovy_pocet
+- zodpoveda
+- vykona
+- tolerancia
+- dokumentovanie
+
+Ak je hodnota v relevantnom referenčnom riadku,
+musí byť aj vo výslednom riadku.
+
+Nevytváraj riadky, kde zostane väčšina týchto polí
+prázdna, ak ich referenčný KSP obsahuje.
+
+C. KONTROLA MNOŽSTIEV
+
+Ak má výsledný subproces zodpovedajúcu
+agregovanú položku cenovej ponuky,
+použi presné agregované množstvo a MJ.
+
+Nesmieš použiť čiastkové množstvo len z jedného hárku.
+
+D. KONTROLA REFERENCIE
+
+Výsledok má byť adaptáciou referenčného KSP,
+nie jeho zjednodušenou skrátenou verziou.
+
+Ak má relevantný referenčný subproces viac kontrolných
+riadkov, zachovaj všetky relevantné riadky,
+pokiaľ ich vedome neoznačíš ako REMOVE_CANDIDATE
+alebo VERIFY podľa pravidiel vyššie.
 
 ===============================================
 O. ZAKÁZANÉ
@@ -1064,6 +1176,13 @@ Formát:
     "legal_basis": ""
   }
 ]
+
+Pred odoslaním JSON:
+- skontroluj, že relevantné agregované položky neboli vynechané,
+- skontroluj, že množstvá sú z agregovaného rozpočtu,
+- skontroluj, že polia kriterium, zodpoveda, vykona,
+  tolerancia a dokumentovanie nie sú prázdne,
+  ak ich obsahuje relevantný referenčný riadok.
 
 Každý riadok musí obsahovať:
 
