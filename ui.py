@@ -21,44 +21,211 @@ from pages.project_detail import show_project_detail
 def apply_styles():
     st.markdown("""
     <style>
+        :root {
+            --bg: #0f2347;
+            --bg-deep: #0a1730;
+            --panel: rgba(20, 47, 86, 0.88);
+            --panel-soft: rgba(27, 58, 103, 0.78);
+            --border: rgba(121, 157, 220, 0.35);
+            --text: #f7f9ff;
+            --muted: #b8c7e6;
+            --blue: #3f7cff;
+            --violet: #7b5cff;
+            --pink: #ec4899;
+            --orange: #ff9f43;
+            --cyan: #2dd4ff;
+        }
 
+        /* Hlavná plocha */
         .stApp {
-            background-color: #f7fbf7;
+            background:
+                radial-gradient(circle at 80% 0%, rgba(255, 159, 67, 0.10), transparent 24%),
+                radial-gradient(circle at 62% 10%, rgba(123, 92, 255, 0.14), transparent 30%),
+                linear-gradient(135deg, #10284f 0%, #102349 48%, #0b1a36 100%);
+            color: var(--text);
         }
 
+        .block-container {
+            max-width: 1500px;
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+        }
+
+        /* Nadpisy */
         h1, h2, h3 {
-            color: #1f5f3b;
+            color: var(--text) !important;
+            letter-spacing: -0.02em;
         }
 
+        h1 {
+            font-weight: 800 !important;
+        }
+
+        p, label, .stMarkdown {
+            color: var(--text);
+        }
+
+        /* Sidebar */
         section[data-testid="stSidebar"] {
-            background-color: #eaf5ea;
+            background:
+                radial-gradient(circle at 20% 90%, rgba(123, 92, 255, 0.22), transparent 30%),
+                linear-gradient(180deg, #0a1b38 0%, #0b2142 55%, #09162e 100%);
+            border-right: 1px solid rgba(127, 162, 219, 0.22);
         }
 
+        section[data-testid="stSidebar"] > div {
+            padding-top: 1.25rem;
+        }
+
+        section[data-testid="stSidebar"] h1 {
+            font-size: 1.65rem !important;
+            margin-bottom: 0.2rem;
+        }
+
+        /* Input */
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stTextArea"] textarea {
+            background: rgba(9, 27, 58, 0.72) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(110, 150, 220, 0.55) !important;
+            border-radius: 12px !important;
+        }
+
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stTextArea"] textarea:focus {
+            border-color: #7b5cff !important;
+            box-shadow: 0 0 0 1px rgba(123, 92, 255, 0.40) !important;
+        }
+
+        /* Selectbox */
+        div[data-baseweb="select"] > div {
+            background: rgba(12, 32, 67, 0.90) !important;
+            color: white !important;
+            border: 1px solid rgba(103, 142, 210, 0.52) !important;
+            border-radius: 11px !important;
+        }
+
+        /* File uploader - zámerne jednoduchý */
+        div[data-testid="stFileUploader"] {
+            border: 1px solid rgba(106, 147, 214, 0.42);
+            border-radius: 14px;
+            padding: 0.55rem 0.75rem 0.35rem 0.75rem;
+            background: rgba(27, 58, 103, 0.45);
+            box-shadow: none;
+        }
+
+        div[data-testid="stFileUploader"] section {
+            background: rgba(17, 42, 78, 0.52) !important;
+            border: 1px dashed rgba(127, 162, 219, 0.38) !important;
+            border-radius: 10px !important;
+            padding: 0.55rem !important;
+        }
+
+        div[data-testid="stFileUploader"] button {
+            background: #f8fafc !important;
+            color: #15233e !important;
+            border: 1px solid #d7dfec !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            box-shadow: none !important;
+        }
+
+        /* Tlačidlá */
         div.stButton > button {
-            background-color: #2e7d32;
-            color: white;
-            border-radius: 8px;
-            border: none;
-            font-weight: 600;
+            color: white !important;
+            border: 1px solid rgba(255, 255, 255, 0.14) !important;
+            border-radius: 11px !important;
+            font-weight: 700 !important;
+            background: linear-gradient(
+                90deg,
+                #ff9f43 0%,
+                #f43f5e 28%,
+                #c43be4 62%,
+                #3f6cf5 100%
+            ) !important;
+            box-shadow: 0 8px 22px rgba(34, 63, 128, 0.24);
+            transition: all 0.18s ease;
         }
 
         div.stButton > button:hover {
-            background-color: #256628;
+            transform: translateY(-1px);
+            filter: brightness(1.05);
+            border-color: rgba(255, 255, 255, 0.30) !important;
+        }
+
+        /* Info / success / warning boxy */
+        div[data-testid="stAlert"] {
+            border-radius: 13px;
+            border: 1px solid rgba(106, 147, 214, 0.30);
+            background: rgba(24, 55, 101, 0.70);
             color: white;
         }
 
-        div[data-baseweb="select"] > div {
-            border: 2px solid #7fb77e;
-            border-radius: 8px;
+        /* Dataframe */
+        div[data-testid="stDataFrame"] {
+            border: 1px solid rgba(106, 147, 214, 0.30);
+            border-radius: 14px;
+            overflow: hidden;
         }
 
-        div[data-testid="stFileUploader"] {
-            border: 1px solid #b8d8b8;
+        /* Jemná karta okolo hlavných sekcií cez HTML utility triedy */
+        .ksp-hero {
+            padding: 1.35rem 1.55rem;
+            margin-bottom: 1.15rem;
+            border-radius: 18px;
+            border: 1px solid rgba(115, 153, 218, 0.34);
+            background:
+                radial-gradient(circle at 86% 24%, rgba(255, 159, 67, 0.18), transparent 20%),
+                radial-gradient(circle at 72% 8%, rgba(236, 72, 153, 0.15), transparent 24%),
+                linear-gradient(120deg, rgba(19, 49, 93, 0.94), rgba(13, 34, 69, 0.90));
+            box-shadow: 0 12px 34px rgba(4, 16, 39, 0.18);
+        }
+
+        .ksp-hero-title {
+            font-size: clamp(2.1rem, 4vw, 3.55rem);
+            font-weight: 850;
+            line-height: 1;
+            margin: 0;
+            color: white;
+        }
+
+        .ksp-gradient-text {
+            background: linear-gradient(90deg, #ff9f43, #fb4667, #d23be7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .ksp-hero-subtitle {
+            color: #d9e3f7;
+            font-size: 1.03rem;
+            margin-top: 0.55rem;
+            margin-bottom: 0;
+        }
+
+        .ksp-section-title {
+            margin-top: 1.35rem;
+            padding: 0.1rem 0 0.55rem 0;
+            font-size: 1.42rem;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .ksp-mini-label {
+            color: #9fb2d6;
+            font-size: 0.88rem;
+            letter-spacing: 0.01em;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #38558a;
             border-radius: 10px;
-            padding: 10px;
-            background-color: white;
         }
-
     </style>
     """, unsafe_allow_html=True)
 
@@ -71,7 +238,21 @@ def show_sidebar():
     apply_styles()
 
     with st.sidebar:
-        st.title("KSP Generator")
+        st.markdown(
+            """
+            <div style="padding:0.25rem 0 1.0rem 0;">
+                <div style="font-size:1.75rem;font-weight:850;line-height:1;">
+                    <span style="background:linear-gradient(90deg,#ff9f43,#fb4667,#d23be7);
+                    -webkit-background-clip:text;-webkit-text-fill-color:transparent;">KSP</span>
+                    <span style="color:white;"> Generator</span>
+                </div>
+                <div style="color:#9fb2d6;font-size:0.82rem;margin-top:0.45rem;">
+                    Kontroly. Skúšky. Projekty.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         menu = st.selectbox(
             "Menu",
@@ -114,11 +295,18 @@ def show_page(menu):
 # --------------------------------------------------
 
 def show_new_project():
-    st.title("📋 Nový projekt")
-
-    st.info(
-        "Nahraj projektové podklady "
-        "a aplikácia pripraví návrh KSP."
+    st.markdown(
+        """
+        <div class="ksp-hero">
+            <div class="ksp-hero-title">
+                Nový <span class="ksp-gradient-text">projekt</span>
+            </div>
+            <div class="ksp-hero-subtitle">
+                Nahraj projektové podklady a aplikácia pripraví návrh KSP.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
     project_name = st.text_input(
@@ -127,7 +315,8 @@ def show_new_project():
     )
 
     st.markdown(
-        "### 📄 Projektové podklady"
+        '<div class="ksp-section-title">📄 Projektové podklady</div>',
+        unsafe_allow_html=True
     )
 
     col1, col2 = st.columns(2)
@@ -180,7 +369,8 @@ def show_new_project():
         )
 
     st.markdown(
-        "### 💾 Uloženie projektu"
+        '<div class="ksp-section-title">💾 Uloženie projektu</div>',
+        unsafe_allow_html=True
     )
 
     if st.button(
