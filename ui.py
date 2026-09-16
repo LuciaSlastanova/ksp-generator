@@ -89,6 +89,12 @@ def apply_styles():
             color: var(--text);
         }
 
+        /* Skrytie automatickej Streamlit multipage navigácie (app / project detail) */
+        div[data-testid="stSidebarNav"],
+        section[data-testid="stSidebar"] nav {
+            display: none !important;
+        }
+
         /* Sidebar */
         section[data-testid="stSidebar"] {
             position: relative;
