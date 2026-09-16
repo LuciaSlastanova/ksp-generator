@@ -1,4 +1,7 @@
 import json
+import math
+import re
+
 import streamlit as st
 
 from openai import OpenAI
@@ -27,6 +30,237 @@ def clean_json_response(raw_result):
         raw_result = raw_result[:-3]
 
     return raw_result.strip()
+
+
+# ==========================================================
+# POMOCNÉ FUNKCIE - VÝPOČET CELKOVÉHO POČTU SKÚŠOK/KONTROL
+# ==========================================================
+
+def _normalize_number(value):
+    """Prevedie slovenský zápis čísla na float."""
+    if value is None:
+        return None
+
+    normalized = (
+        str(value)
+        .replace("\xa0", "")
+        .replace(" ", "")
+        .replace(",", ".")
+        .strip()
+    )
+
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
+def _normalize_unit(unit):
+    """Zjednotí zápis MJ, napr. m³ -> m3 a m² -> m2."""
+    if not unit:
+        return ""
+
+    return (
+        str(unit)
+        .strip()
+        .lower()
+        .replace("³", "3")
+        .replace("²", "2")
+        .replace(" ", "")
+    )
+
+
+def calculate_total_count(quantity_text, frequency_text):
+    """
+    Vypočíta celkový počet skúšok/kontrol z množstva a početnosti.
+
+    Podporované príklady:
+        16585,708 m3 + 1 skúška / 5000 m3 -> 4
+        9703,5 m2 + 1 skúška na 1000 m2 -> 10
+        127 ks + 1x / 50 ks -> 3
+        2100 m3 + min. 1 skúška na každých 500 m3 -> 5
+        3000 m2 + 2 skúšky / 1000 m2 -> 6
+        3000 m2 + 2x na každých 1000 m2 -> 6
+
+    Automaticky sa počítajú iba jednoznačné matematické pravidlá.
+    Slovné alebo podmienené pravidlá sa nechávajú bez výpočtu.
+    """
+    if not quantity_text or not frequency_text:
+        return None
+
+    quantity_match = re.search(
+        r"([0-9][0-9\s\xa0.,]*)\s*(m(?:2|3|²|³)?|ks|t|kg|hod|l)?\b",
+        str(quantity_text),
+        re.IGNORECASE,
+    )
+    if not quantity_match:
+        return None
+
+    frequency = (
+        str(frequency_text)
+        .strip()
+        .lower()
+        .replace("×", "x")
+    )
+
+    blocked_phrases = (
+        "každá dodávka",
+        "kazda dodavka",
+        "každej dodávke",
+        "kazdej dodavke",
+        "každý domiešavač",
+        "kazdy domiesavac",
+        "každá zmena",
+        "kazda zmena",
+        "priebežne",
+        "priebezne",
+        "podľa potreby",
+        "podla potreby",
+        "100 %",
+        "100%",
+        "na začiatku",
+        "na zaciatku",
+        "pri zmene",
+        "pri každej",
+        "pri kazdej",
+        "podľa pd",
+        "podla pd",
+        "podľa tkp",
+        "podla tkp",
+    )
+    if any(phrase in frequency for phrase in blocked_phrases):
+        return None
+
+    # "min. 1 skúška..." je stále matematicky jednoznačné minimum.
+    frequency = re.sub(r"\bmin(?:imálne|imalne)?\.?\s*", "", frequency)
+    frequency = re.sub(r"\bmin\.\s*", "", frequency)
+
+    unit_pattern = r"(m(?:2|3|²|³)?|ks|t|kg|hod|l)?"
+    interval_pattern = r"([0-9][0-9\s\xa0.,]*)"
+
+    patterns = [
+        rf"(\d+)\s*(?:x|ks|skúšky|skusky|skúška|skuska|kontroly|kontrola|merania|meranie|odbery|odber)?"
+        rf"\s*/\s*{interval_pattern}\s*{unit_pattern}\b",
+
+        rf"(\d+)\s*(?:x|ks|skúšky|skusky|skúška|skuska|kontroly|kontrola|merania|meranie|odbery|odber)?"
+        rf"\s+na\s+(?:každých\s+|kazdych\s+)?{interval_pattern}\s*{unit_pattern}\b",
+
+        rf"(\d+)\s*x?\s+(?:každých|kazdych)\s+{interval_pattern}\s*{unit_pattern}\b",
+
+        rf"(\d+)\s*/\s*{interval_pattern}\s*{unit_pattern}\b",
+    ]
+
+    match = None
+    for pattern in patterns:
+        match = re.search(pattern, frequency, re.IGNORECASE)
+        if match:
+            break
+
+    if not match:
+        return None
+
+    tests_per_interval = _normalize_number(match.group(1))
+    interval = _normalize_number(match.group(2))
+    quantity = _normalize_number(quantity_match.group(1))
+
+    if (
+        tests_per_interval is None
+        or interval is None
+        or quantity is None
+        or tests_per_interval <= 0
+        or interval <= 0
+    ):
+        return None
+
+    quantity_unit = _normalize_unit(quantity_match.group(2) or "")
+    frequency_unit = _normalize_unit(match.group(3) or "")
+
+    if quantity_unit and frequency_unit and quantity_unit != frequency_unit:
+        return None
+
+    intervals = math.ceil(quantity / interval)
+    total = intervals * tests_per_interval
+
+    if float(total).is_integer():
+        return str(int(total))
+
+    return str(math.ceil(total))
+
+
+def _slugify_group_part(value):
+    """Normalizuje časť group_key bez diakritiky a medzier."""
+    value = str(value or "").strip().lower()
+
+    replacements = {
+        "á": "a", "ä": "a", "č": "c", "ď": "d", "é": "e",
+        "í": "i", "ĺ": "l", "ľ": "l", "ň": "n", "ó": "o",
+        "ô": "o", "ŕ": "r", "š": "s", "ť": "t", "ú": "u",
+        "ý": "y", "ž": "z",
+    }
+    for src, dst in replacements.items():
+        value = value.replace(src, dst)
+
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    return value.strip("_")
+
+
+def stabilize_group_key(item_name, group_key):
+    """
+    Python poistka proti zlúčeniu technicky rozdielnych položiek.
+
+    AI vytvorí základný group_key.
+    Python doplní rozlišovací znak, ak názov obsahuje jasný technický
+    variant, ktorý sa nesmie agregovať s opačným variantom.
+    """
+    name = str(item_name or "").strip().lower()
+    key = _slugify_group_part(group_key)
+
+    if not key:
+        return key
+
+    qualifier_rules = [
+        (("bez zhutnenia", "nezhutnen"), "bez_zhutnenia"),
+        (("so zhutnením", "so zhutnenim", "s hutnením", "s hutnenim"), "so_zhutnenim"),
+
+        (("bez paženia", "bez pazenia", "nepažen", "nepazen"), "bez_pazenia"),
+        (("s pažením", "s pazenim"), "s_pazenim"),
+
+        (("bez odvozu",), "bez_odvozu"),
+        (("s odvozom", "so odvozom"), "s_odvozom"),
+
+        (("bez dodávky", "bez dodavky"), "bez_dodavky"),
+        (("s dodávkou", "s dodavkou", "so dodávkou", "so dodavkou"), "s_dodavkou"),
+
+        (("bez montáže", "bez montaze"), "bez_montaze"),
+        (("s montážou", "s montazou", "so montážou", "so montazou"), "s_montazou"),
+    ]
+
+    detected = []
+
+    for phrases, qualifier in qualifier_rules:
+        if any(phrase in name for phrase in phrases):
+            detected.append(qualifier)
+
+    # Bežné technické parametre, ktoré často odlišujú výrobok alebo skúšky.
+    technical_patterns = [
+        (r"\bsn\s*[- ]?(\d+)\b", "sn"),
+        (r"\bdn\s*[- ]?(\d+)\b", "dn"),
+        (r"\bc\s*(\d+)\s*/\s*(\d+)\b", "c"),
+        (r"\bs\s*([1-5])\b", "s"),
+        (r"\bpn\s*[- ]?(\d+(?:[.,]\d+)?)\b", "pn"),
+    ]
+
+    for pattern, prefix in technical_patterns:
+        match = re.search(pattern, name, re.IGNORECASE)
+        if match:
+            suffix = "_".join(g.replace(",", "_") for g in match.groups())
+            detected.append(f"{prefix}_{suffix}")
+
+    for qualifier in detected:
+        if qualifier and qualifier not in key:
+            key = f"{key}_{qualifier}"
+
+    return key
 
 
 # ==========================================================
@@ -279,7 +513,8 @@ Príklady:
 "lozko_strkopiesok"
 "obsyp_potrubia"
 "vykop_ryhy"
-"zasyp_ryhy"
+"zasyp_ryhy_so_zhutnenim"
+"zasyp_ryhy_bez_zhutnenia"
 "revizna_sachta_dn400"
 "tlakova_skuska_pe_dn90"
 
@@ -288,13 +523,33 @@ majú dostať rovnaký group_key.
 
 ALE NESMIEŠ spojiť položky, ktoré sa technicky líšia.
 
-NESMIEŠ dať rovnaký group_key pre:
-- DN160 a DN200
-- m a m3
-- PVC a PE, ak ide o odlišný výrobok
-- potrubie a jeho montáž, ak sú samostatnými položkami
+NESMIEŠ dať rovnaký group_key pre položky, ktoré sa technicky líšia.
+
+Rozlišuj najmä:
+- odlišné DN, priemery a rozmery
+- odlišné MJ
+- odlišný materiál alebo typ výrobku
+- odlišné triedy a parametre, napr. SN, PN, C25/30, C30/37, S4, S5
+- prácu a materiál, ak sú samostatnými položkami
+- montáž a dodávku, ak sú samostatnými položkami
 - výkop a zásyp
 - materiál a skúšku
+- variant "so zhutnením" a "bez zhutnenia"
+- variant "s pažením" a "bez paženia"
+- variant "s odvozom" a "bez odvozu"
+- variant "s dodávkou" a "bez dodávky"
+- variant "s montážou" a "bez montáže"
+- akúkoľvek inú vlastnosť, ktorá mení technológiu, skúšku,
+  normu, početnosť, kvalitatívnu požiadavku alebo spôsob realizácie
+
+VŠEOBECNÉ PRAVIDLO:
+Ak by zlúčenie dvoch položiek mohlo spôsobiť nesprávne množstvo
+pre inú skúšku, inú technológiu alebo inú požiadavku,
+musia mať rozdielny group_key.
+
+Nerozdeľuj však položky len kvôli nepodstatnému rozdielu v slovoslede
+alebo pravopise. Významovo rovnaké položky z rôznych hárkov majú
+naďalej dostať rovnaký group_key.
 
 Ak si nie si istý, vytvor radšej odlišný group_key.
 Nesprávne sčítanie je horšie ako ponechanie dvoch skupín.
@@ -534,10 +789,9 @@ Vráť iba JSON.
             ).strip()
         )
 
-        clean_item["group_key"] = (
-            str(
-                clean_item.get("group_key") or ""
-            ).strip()
+        clean_item["group_key"] = stabilize_group_key(
+            clean_item.get("item_name", ""),
+            clean_item.get("group_key", ""),
         )
 
         clean_item["reason"] = (
@@ -632,7 +886,6 @@ PREVEZMI z referenčného KSP CELÝ RELEVANTNÝ RIADOK:
 - kritérium
 - normu alebo predpis
 - početnosť
-- celkový počet / spôsob kontroly
 - zodpovednosť
 - kto kontrolu vykonáva
 - toleranciu
@@ -910,16 +1163,40 @@ Pri každom výslednom riadku urob kontrolu:
 
 1. nájdi relevantný riadok v referenčnom KSP,
 2. prevezmi z neho kritérium,
-3. prevezmi početnosť,
-4. prevezmi celkový počet / spôsob kontroly,
-5. prevezmi zodpovednosť,
-6. prevezmi kto kontrolu vykoná,
-7. prevezmi toleranciu,
-8. prevezmi dokumentovanie.
+3. prevezmi početnosť PRESNE ako pravidlo,
+4. prevezmi zodpovednosť,
+5. prevezmi kto kontrolu vykoná,
+6. prevezmi toleranciu,
+7. prevezmi dokumentovanie.
 
-Ak je niektorá z týchto hodnôt
-v referenčnom riadku vyplnená,
-NESMIE zostať vo výsledku prázdna.
+DÔLEŽITÉ PRE CELKOVÝ POČET:
+
+Pole "pocetnost" obsahuje pravidlo z referenčného KSP, napr.:
+
+"1 skúška / 5000 m3"
+"1 kontrola / 1000 m2"
+"1 skúška na 50 m"
+"1x / 50 ks"
+"min. 1 skúška na každých 500 m3"
+"2 skúšky / 1000 m2"
+"2x na každých 1000 m2"
+
+Ak je početnosť matematicky vypočítateľná z množstva,
+CELKOVÝ POČET NEPOČÍTAJ. V takom prípade vráť:
+
+"celkovy_pocet": ""
+
+Výsledný počet vypočíta Python po prijatí JSON odpovede.
+
+Ak celkový počet nie je matematicky odvoditeľný z množstva
+(napr. "priebežne", "každá dodávka", "100 %", "podľa potreby",
+"na začiatku a potom pri zmene" alebo iné textové pravidlo),
+môžeš prevziať z referenčného KSP relevantný textový spôsob kontroly,
+ak tam je uvedený.
+
+Ak je niektorá z hodnôt kritérium, početnosť, zodpovednosť,
+vykoná, tolerancia alebo dokumentovanie v referenčnom riadku
+vyplnená, NESMIE zostať vo výsledku prázdna.
 
 Prázdne pole je prípustné iba vtedy,
 ak je prázdne aj v relevantnom referenčnom riadku
@@ -991,7 +1268,6 @@ Pre každý výsledný riadok skontroluj tieto polia:
 - sposob_kontroly
 - kriterium
 - pocetnost
-- celkovy_pocet
 - zodpoveda
 - vykona
 - tolerancia
@@ -999,6 +1275,9 @@ Pre každý výsledný riadok skontroluj tieto polia:
 
 Ak je hodnota v relevantnom referenčnom riadku,
 musí byť aj vo výslednom riadku.
+
+Výnimka je pole "celkovy_pocet": pri číselnej intervalovej
+početnosti ho nechaj prázdne, pretože ho vypočíta Python.
 
 Nevytváraj riadky, kde zostane väčšina týchto polí
 prázdna, ak ich referenčný KSP obsahuje.
@@ -1182,7 +1461,9 @@ Pred odoslaním JSON:
 - skontroluj, že množstvá sú z agregovaného rozpočtu,
 - skontroluj, že polia kriterium, zodpoveda, vykona,
   tolerancia a dokumentovanie nie sú prázdne,
-  ak ich obsahuje relevantný referenčný riadok.
+  ak ich obsahuje relevantný referenčný riadok,
+- pri matematicky vypočítateľnej početnosti nechaj celkovy_pocet
+  prázdny; vypočíta ho Python.
 
 Každý riadok musí obsahovať:
 
@@ -1316,6 +1597,20 @@ legal_basis
             status = "VERIFY"
 
         clean_row["status"] = status
+
+        # --------------------------------------------------
+        # CELKOVÝ POČET POČÍTA PYTHON, NIE AI
+        # --------------------------------------------------
+        # Ak je početnosť jednoznačný číselný interval
+        # (napr. 1 skúška / 5000 m3), vypočítame počet
+        # deterministicky a vždy zaokrúhlime nahor.
+        calculated_count = calculate_total_count(
+            clean_row.get("mnozstvo", ""),
+            clean_row.get("pocetnost", ""),
+        )
+
+        if calculated_count is not None:
+            clean_row["celkovy_pocet"] = calculated_count
 
         clean_rows.append(
             clean_row
