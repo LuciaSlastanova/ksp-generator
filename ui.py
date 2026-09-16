@@ -54,6 +54,27 @@ def apply_styles():
             padding-bottom: 3rem;
         }
 
+        /* Streamlit horný header - odstránenie bieleho pásu */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            height: 0 !important;
+        }
+
+        div[data-testid="stToolbar"] {
+            right: 0.75rem;
+            top: 0.35rem;
+        }
+
+        div[data-testid="stDecoration"] {
+            display: none !important;
+        }
+
+        /* Hlavný kontajner posun hore po schovaní headera */
+        .stAppViewContainer .main .block-container {
+            padding-top: 1.2rem;
+        }
+
+
         /* Nadpisy */
         h1, h2, h3 {
             color: var(--text) !important;
