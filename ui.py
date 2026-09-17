@@ -50,8 +50,8 @@ def apply_styles():
 
         .block-container {
             max-width: 1500px;
-            padding-top: 1rem;
-            padding-bottom: 1.5rem;
+            padding-top: 2rem;
+            padding-bottom: 3rem;
         }
 
         /* Streamlit horný header - odstránenie bieleho pásu */
@@ -71,7 +71,7 @@ def apply_styles():
 
         /* Hlavný kontajner posun hore po schovaní headera */
         .stAppViewContainer .main .block-container {
-            padding-top: 0.7rem;
+            padding-top: 1.2rem;
         }
 
 
@@ -99,8 +99,6 @@ def apply_styles():
         section[data-testid="stSidebar"] {
             position: relative;
             overflow: hidden;
-            width: 260px !important;
-            min-width: 260px !important;
             background:
                 radial-gradient(circle at 18% 8%, rgba(255, 159, 67, 0.13), transparent 18%),
                 radial-gradient(circle at 20% 90%, rgba(123, 92, 255, 0.28), transparent 35%),
@@ -128,11 +126,11 @@ def apply_styles():
         section[data-testid="stSidebar"] > div {
             position: relative;
             z-index: 1;
-            padding-top: 0.8rem;
+            padding-top: 1.25rem;
         }
 
         section[data-testid="stSidebar"] h1 {
-            font-size: 1.45rem !important;
+            font-size: 1.65rem !important;
             margin-bottom: 0.2rem;
         }
 
@@ -163,7 +161,7 @@ def apply_styles():
         div[data-testid="stFileUploader"] {
             border: 1px solid rgba(106, 147, 214, 0.42);
             border-radius: 14px;
-            padding: 0.35rem 0.55rem 0.25rem 0.55rem;
+            padding: 0.55rem 0.75rem 0.35rem 0.75rem;
             background: rgba(35, 82, 145, 0.56);
             box-shadow: none;
         }
@@ -172,7 +170,7 @@ def apply_styles():
             background: rgba(24, 60, 110, 0.62) !important;
             border: 1px dashed rgba(127, 162, 219, 0.38) !important;
             border-radius: 10px !important;
-            padding: 0.35rem !important;
+            padding: 0.55rem !important;
         }
 
         div[data-testid="stFileUploader"] button {
@@ -226,9 +224,9 @@ def apply_styles():
         .ksp-hero {
             position: relative;
             overflow: hidden;
-            min-height: 150px;
-            padding: 1.05rem 1.35rem;
-            margin-bottom: 0.75rem;
+            min-height: 210px;
+            padding: 1.65rem 1.8rem;
+            margin-bottom: 1.2rem;
             border-radius: 18px;
             border: 1px solid rgba(125, 170, 235, 0.42);
             background:
@@ -258,7 +256,7 @@ def apply_styles():
         .ksp-hero-title {
             position: relative;
             z-index: 1;
-            font-size: clamp(1.8rem, 3.2vw, 2.85rem);
+            font-size: clamp(2.1rem, 4vw, 3.55rem);
             font-weight: 850;
             line-height: 1;
             margin: 0;
@@ -277,15 +275,15 @@ def apply_styles():
             z-index: 1;
             max-width: 58%;
             color: #d9e3f7;
-            font-size: 0.95rem;
-            margin-top: 0.35rem;
+            font-size: 1.03rem;
+            margin-top: 0.55rem;
             margin-bottom: 0;
         }
 
         .ksp-section-title {
-            margin-top: 0.8rem;
-            padding: 0.05rem 0 0.35rem 0;
-            font-size: 1.2rem;
+            margin-top: 1.35rem;
+            padding: 0.1rem 0 0.55rem 0;
+            font-size: 1.42rem;
             font-weight: 800;
             color: #ffffff;
         }
@@ -296,24 +294,157 @@ def apply_styles():
             letter-spacing: 0.01em;
         }
 
-        /* Kompaktnejšie rozostupy pre 15" notebook pri 100 % zoome */
-        div[data-testid="stTextInput"] {
-            margin-bottom: 0.25rem;
+
+
+        /* ==================================================
+           RESPONZIVITA PODĽA VEĽKOSTI OKNA PREHLIADAČA
+           ================================================== */
+
+        /* Základ: plynulé škálovanie bez viazania na konkrétny monitor */
+        .block-container {
+            width: min(94vw, 1500px);
+            max-width: 1500px;
+            padding-left: clamp(0.8rem, 1.8vw, 2rem);
+            padding-right: clamp(0.8rem, 1.8vw, 2rem);
+            padding-bottom: clamp(1rem, 2.5vh, 3rem);
+        }
+
+        .ksp-hero {
+            min-height: clamp(118px, 18vh, 210px);
+            padding: clamp(0.85rem, 1.6vw, 1.65rem) clamp(1rem, 1.8vw, 1.8rem);
+            margin-bottom: clamp(0.5rem, 1.2vh, 1.2rem);
+        }
+
+        .ksp-hero-title {
+            font-size: clamp(2rem, 3.2vw, 3.55rem);
+        }
+
+        .ksp-hero-subtitle {
+            font-size: clamp(0.90rem, 1vw, 1.03rem);
+            margin-top: clamp(0.2rem, 0.6vh, 0.55rem);
+        }
+
+        .ksp-section-title {
+            margin-top: clamp(0.45rem, 1.15vh, 1.35rem);
+            padding-bottom: clamp(0.18rem, 0.55vh, 0.55rem);
+            font-size: clamp(1.15rem, 1.25vw, 1.42rem);
         }
 
         div[data-testid="stFileUploader"] {
-            margin-bottom: 0.25rem;
+            padding: clamp(0.35rem, 0.65vh, 0.55rem) 0.75rem clamp(0.25rem, 0.45vh, 0.35rem) 0.75rem;
         }
 
-        div[data-testid="stFileUploader"] small {
-            font-size: 0.72rem !important;
+        div[data-testid="stFileUploader"] section {
+            min-height: clamp(52px, 7vh, 78px) !important;
+            padding: clamp(0.35rem, 0.7vh, 0.55rem) !important;
         }
 
-        @media (max-height: 950px) {
-            .ksp-hero { min-height: 135px; }
-            .ksp-section-title { margin-top: 0.6rem; }
-            .block-container { padding-bottom: 1rem; }
+        /* Nízke notebookové obrazovky: zmenšujeme hlavne VÝŠKU, nie šírku */
+        @media (max-height: 900px) {
+            .stAppViewContainer .main .block-container {
+                padding-top: 0.7rem;
+            }
+
+            .block-container {
+                padding-bottom: 1rem;
+            }
+
+            .ksp-hero {
+                min-height: 112px;
+                padding: 0.75rem 1.2rem;
+                margin-bottom: 0.45rem;
+                border-radius: 15px;
+            }
+
+            .ksp-hero-title {
+                font-size: clamp(1.95rem, 2.8vw, 2.75rem);
+            }
+
+            .ksp-hero-subtitle {
+                font-size: 0.92rem;
+                margin-top: 0.2rem;
+            }
+
+            .ksp-section-title {
+                margin-top: 0.45rem;
+                padding: 0 0 0.18rem 0;
+                font-size: 1.18rem;
+            }
+
+            div[data-testid="stFileUploader"] {
+                padding-top: 0.32rem;
+                padding-bottom: 0.22rem;
+            }
+
+            div[data-testid="stFileUploader"] section {
+                min-height: 52px !important;
+                padding: 0.30rem !important;
+            }
+
+            div[data-testid="stTextInput"] {
+                margin-bottom: 0.15rem;
+            }
+
+            section[data-testid="stSidebar"] > div {
+                padding-top: 0.8rem;
+            }
         }
+
+        /* Veľmi nízke okná – napr. notebook s lištami prehliadača */
+        @media (max-height: 760px) {
+            .ksp-hero {
+                min-height: 92px;
+                padding: 0.55rem 1rem;
+            }
+
+            .ksp-hero-title {
+                font-size: 1.9rem;
+            }
+
+            .ksp-hero-subtitle {
+                font-size: 0.84rem;
+            }
+
+            .ksp-section-title {
+                margin-top: 0.3rem;
+                font-size: 1.08rem;
+            }
+
+            div[data-testid="stFileUploader"] section {
+                min-height: 46px !important;
+                padding: 0.22rem !important;
+            }
+        }
+
+        /* Užšie okná/tablety: obsah sa prispôsobí šírke */
+        @media (max-width: 1200px) {
+            .block-container {
+                width: 96vw;
+                padding-left: 0.9rem;
+                padding-right: 0.9rem;
+            }
+
+            .ksp-hero-subtitle {
+                max-width: 72%;
+            }
+        }
+
+        @media (max-width: 800px) {
+            .block-container {
+                width: 98vw;
+                padding-left: 0.55rem;
+                padding-right: 0.55rem;
+            }
+
+            .ksp-hero {
+                background-position: 62% center;
+            }
+
+            .ksp-hero-subtitle {
+                max-width: 92%;
+            }
+        }
+
 
         /* Scrollbar */
         ::-webkit-scrollbar {
@@ -338,13 +469,13 @@ def show_sidebar():
     with st.sidebar:
         st.markdown(
             """
-            <div style="padding:0.15rem 0 0.65rem 0;">
-                <div style="font-size:1.5rem;font-weight:850;line-height:1;">
+            <div style="padding:0.25rem 0 1.0rem 0;">
+                <div style="font-size:1.75rem;font-weight:850;line-height:1;">
                     <span style="background:linear-gradient(90deg,#ff9f43,#fb4667,#d23be7);
                     -webkit-background-clip:text;-webkit-text-fill-color:transparent;">KSP</span>
                     <span style="color:white;"> Generator</span>
                 </div>
-                <div style="color:#9fb2d6;font-size:0.78rem;margin-top:0.35rem;">
+                <div style="color:#9fb2d6;font-size:0.82rem;margin-top:0.45rem;">
                     Kontroly. Skúšky. Projekty.
                 </div>
             </div>
