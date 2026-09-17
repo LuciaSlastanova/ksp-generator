@@ -50,8 +50,8 @@ def apply_styles():
 
         .block-container {
             max-width: 1500px;
-            padding-top: 2rem;
-            padding-bottom: 3rem;
+            padding-top: 1rem;
+            padding-bottom: 1.5rem;
         }
 
         /* Streamlit horný header - odstránenie bieleho pásu */
@@ -71,7 +71,7 @@ def apply_styles():
 
         /* Hlavný kontajner posun hore po schovaní headera */
         .stAppViewContainer .main .block-container {
-            padding-top: 1.2rem;
+            padding-top: 0.7rem;
         }
 
 
@@ -99,6 +99,8 @@ def apply_styles():
         section[data-testid="stSidebar"] {
             position: relative;
             overflow: hidden;
+            width: 260px !important;
+            min-width: 260px !important;
             background:
                 radial-gradient(circle at 18% 8%, rgba(255, 159, 67, 0.13), transparent 18%),
                 radial-gradient(circle at 20% 90%, rgba(123, 92, 255, 0.28), transparent 35%),
@@ -126,11 +128,11 @@ def apply_styles():
         section[data-testid="stSidebar"] > div {
             position: relative;
             z-index: 1;
-            padding-top: 1.25rem;
+            padding-top: 0.8rem;
         }
 
         section[data-testid="stSidebar"] h1 {
-            font-size: 1.65rem !important;
+            font-size: 1.45rem !important;
             margin-bottom: 0.2rem;
         }
 
@@ -161,7 +163,7 @@ def apply_styles():
         div[data-testid="stFileUploader"] {
             border: 1px solid rgba(106, 147, 214, 0.42);
             border-radius: 14px;
-            padding: 0.55rem 0.75rem 0.35rem 0.75rem;
+            padding: 0.35rem 0.55rem 0.25rem 0.55rem;
             background: rgba(35, 82, 145, 0.56);
             box-shadow: none;
         }
@@ -170,7 +172,7 @@ def apply_styles():
             background: rgba(24, 60, 110, 0.62) !important;
             border: 1px dashed rgba(127, 162, 219, 0.38) !important;
             border-radius: 10px !important;
-            padding: 0.55rem !important;
+            padding: 0.35rem !important;
         }
 
         div[data-testid="stFileUploader"] button {
@@ -224,9 +226,9 @@ def apply_styles():
         .ksp-hero {
             position: relative;
             overflow: hidden;
-            min-height: 210px;
-            padding: 1.65rem 1.8rem;
-            margin-bottom: 1.2rem;
+            min-height: 150px;
+            padding: 1.05rem 1.35rem;
+            margin-bottom: 0.75rem;
             border-radius: 18px;
             border: 1px solid rgba(125, 170, 235, 0.42);
             background:
@@ -256,7 +258,7 @@ def apply_styles():
         .ksp-hero-title {
             position: relative;
             z-index: 1;
-            font-size: clamp(2.1rem, 4vw, 3.55rem);
+            font-size: clamp(1.8rem, 3.2vw, 2.85rem);
             font-weight: 850;
             line-height: 1;
             margin: 0;
@@ -275,15 +277,15 @@ def apply_styles():
             z-index: 1;
             max-width: 58%;
             color: #d9e3f7;
-            font-size: 1.03rem;
-            margin-top: 0.55rem;
+            font-size: 0.95rem;
+            margin-top: 0.35rem;
             margin-bottom: 0;
         }
 
         .ksp-section-title {
-            margin-top: 1.35rem;
-            padding: 0.1rem 0 0.55rem 0;
-            font-size: 1.42rem;
+            margin-top: 0.8rem;
+            padding: 0.05rem 0 0.35rem 0;
+            font-size: 1.2rem;
             font-weight: 800;
             color: #ffffff;
         }
@@ -292,6 +294,25 @@ def apply_styles():
             color: #9fb2d6;
             font-size: 0.88rem;
             letter-spacing: 0.01em;
+        }
+
+        /* Kompaktnejšie rozostupy pre 15" notebook pri 100 % zoome */
+        div[data-testid="stTextInput"] {
+            margin-bottom: 0.25rem;
+        }
+
+        div[data-testid="stFileUploader"] {
+            margin-bottom: 0.25rem;
+        }
+
+        div[data-testid="stFileUploader"] small {
+            font-size: 0.72rem !important;
+        }
+
+        @media (max-height: 950px) {
+            .ksp-hero { min-height: 135px; }
+            .ksp-section-title { margin-top: 0.6rem; }
+            .block-container { padding-bottom: 1rem; }
         }
 
         /* Scrollbar */
@@ -317,13 +338,13 @@ def show_sidebar():
     with st.sidebar:
         st.markdown(
             """
-            <div style="padding:0.25rem 0 1.0rem 0;">
-                <div style="font-size:1.75rem;font-weight:850;line-height:1;">
+            <div style="padding:0.15rem 0 0.65rem 0;">
+                <div style="font-size:1.5rem;font-weight:850;line-height:1;">
                     <span style="background:linear-gradient(90deg,#ff9f43,#fb4667,#d23be7);
                     -webkit-background-clip:text;-webkit-text-fill-color:transparent;">KSP</span>
                     <span style="color:white;"> Generator</span>
                 </div>
-                <div style="color:#9fb2d6;font-size:0.82rem;margin-top:0.45rem;">
+                <div style="color:#9fb2d6;font-size:0.78rem;margin-top:0.35rem;">
                     Kontroly. Skúšky. Projekty.
                 </div>
             </div>
