@@ -5,7 +5,7 @@ from database import (
     get_project_documents,
     upload_project_file,
     download_project_file,
-    delete_project_document,
+    archive_project_document,
     save_project_header,
     get_project_header
 )
@@ -273,14 +273,11 @@ def show_project_detail():
                         "ksp_template"
                     )
 
-                    # Až potom zmažeme starú
+                    # Až potom archivujeme starú verziu
                     if current_template:
 
-                        delete_project_document(
-                            current_template["id"],
-                            current_template[
-                                "file_path"
-                            ]
+                        archive_project_document(
+                            current_template["id"]
                         )
 
                     # Starý Excel už nie je aktuálny
@@ -382,14 +379,11 @@ def show_project_detail():
                         "reference_ksp"
                     )
 
-                    # Až potom zmažeme starý
+                    # Až potom archivujeme starú verziu
                     if current_reference:
 
-                        delete_project_document(
-                            current_reference["id"],
-                            current_reference[
-                                "file_path"
-                            ]
+                        archive_project_document(
+                            current_reference["id"]
                         )
 
                     # Starý vygenerovaný Excel už nie je aktuálny
