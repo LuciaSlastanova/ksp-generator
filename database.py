@@ -279,6 +279,47 @@ def get_project_documents(
 
 
 # --------------------------------------------------
+# NAČÍTANIE NAJNOVŠIEHO DOKUMENTU DANÉHO TYPU
+# --------------------------------------------------
+
+def get_latest_project_document(
+    project_id,
+    document_type
+):
+    """
+    Načíta najnovší aktuálny dokument
+    daného typu pre konkrétny projekt.
+    """
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("documents")
+        .select("*")
+        .eq(
+            "project_id",
+            project_id
+        )
+        .eq(
+            "document_type",
+            document_type
+        )
+        .order(
+            "created_at",
+            desc=True
+        )
+        .limit(1)
+        .execute()
+    )
+
+    if response.data:
+        return response.data[0]
+
+    return None
+
+
+# --------------------------------------------------
 # STIAHNUTIE SÚBORU
 # --------------------------------------------------
 
@@ -298,7 +339,41 @@ def download_project_file(
 
 
 # --------------------------------------------------
-# VYMAZANIE DOKUMENTU
+# ARCHIVÁCIA DOKUMENTU
+# --------------------------------------------------
+
+def archive_project_document(
+    document_id
+):
+    """
+    Odstráni dokument iba z tabuľky documents.
+
+    BEFORE DELETE trigger v Supabase
+    automaticky uloží starý záznam do
+    project_documents_history.
+
+    Fyzický súbor zostáva v Storage,
+    takže historická verzia zostáva zachovaná.
+    """
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("documents")
+        .delete()
+        .eq(
+            "id",
+            document_id
+        )
+        .execute()
+    )
+
+    return response.data
+
+
+# --------------------------------------------------
+# DEFINITÍVNE VYMAZANIE DOKUMENTU
 # --------------------------------------------------
 
 def delete_project_document(
@@ -306,8 +381,11 @@ def delete_project_document(
     file_path
 ):
     """
-    Vymaže dokument zo Storage
-    aj z tabuľky documents.
+    Definitívne vymaže dokument
+    zo Storage aj z tabuľky documents.
+
+    Používať iba vtedy, keď dokument
+    nechceme ponechať ani v histórii.
     """
 
     supabase = get_supabase_client()
@@ -337,6 +415,49 @@ def delete_project_document(
         .eq(
             "id",
             document_id
+        )
+        .execute()
+    )
+
+    return response.data
+
+
+# --------------------------------------------------
+# NAČÍTANIE HISTÓRIE DOKUMENTOV
+# --------------------------------------------------
+
+def get_project_document_history(
+    project_id,
+    document_type=None
+):
+    """
+    Načíta historické verzie dokumentov projektu.
+    Voliteľne len pre konkrétny document_type.
+    """
+
+    supabase = get_supabase_client()
+
+    query = (
+        supabase
+        .table("project_documents_history")
+        .select("*")
+        .eq(
+            "project_id",
+            project_id
+        )
+    )
+
+    if document_type:
+        query = query.eq(
+            "document_type",
+            document_type
+        )
+
+    response = (
+        query
+        .order(
+            "archived_at",
+            desc=True
         )
         .execute()
     )
