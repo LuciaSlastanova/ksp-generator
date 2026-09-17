@@ -297,88 +297,47 @@ def apply_styles():
 
 
         /* ==================================================
-           RESPONZIVITA PODĽA VEĽKOSTI OKNA PREHLIADAČA
+           BEZPEČNÁ RESPONZIVITA PODĽA VÝŠKY OKNA
+           - nemení šírku hlavného obsahu
+           - nezasahuje pod sidebar
+           - pri nižšom okne iba zmenší vertikálne medzery
            ================================================== */
 
-        /* Základ: plynulé škálovanie bez viazania na konkrétny monitor */
-        .block-container {
-            width: min(94vw, 1500px);
-            max-width: 1500px;
-            padding-left: clamp(0.8rem, 1.8vw, 2rem);
-            padding-right: clamp(0.8rem, 1.8vw, 2rem);
-            padding-bottom: clamp(1rem, 2.5vh, 3rem);
-        }
-
-        .ksp-hero {
-            min-height: clamp(118px, 18vh, 210px);
-            padding: clamp(0.85rem, 1.6vw, 1.65rem) clamp(1rem, 1.8vw, 1.8rem);
-            margin-bottom: clamp(0.5rem, 1.2vh, 1.2rem);
-        }
-
-        .ksp-hero-title {
-            font-size: clamp(2rem, 3.2vw, 3.55rem);
-        }
-
-        .ksp-hero-subtitle {
-            font-size: clamp(0.90rem, 1vw, 1.03rem);
-            margin-top: clamp(0.2rem, 0.6vh, 0.55rem);
-        }
-
-        .ksp-section-title {
-            margin-top: clamp(0.45rem, 1.15vh, 1.35rem);
-            padding-bottom: clamp(0.18rem, 0.55vh, 0.55rem);
-            font-size: clamp(1.15rem, 1.25vw, 1.42rem);
-        }
-
-        div[data-testid="stFileUploader"] {
-            padding: clamp(0.35rem, 0.65vh, 0.55rem) 0.75rem clamp(0.25rem, 0.45vh, 0.35rem) 0.75rem;
-        }
-
-        div[data-testid="stFileUploader"] section {
-            min-height: clamp(52px, 7vh, 78px) !important;
-            padding: clamp(0.35rem, 0.7vh, 0.55rem) !important;
-        }
-
-        /* Nízke notebookové obrazovky: zmenšujeme hlavne VÝŠKU, nie šírku */
-        @media (max-height: 900px) {
+        @media (max-height: 950px) {
             .stAppViewContainer .main .block-container {
-                padding-top: 0.7rem;
-            }
-
-            .block-container {
-                padding-bottom: 1rem;
+                padding-top: 0.75rem;
+                padding-bottom: 1.2rem;
             }
 
             .ksp-hero {
-                min-height: 112px;
-                padding: 0.75rem 1.2rem;
-                margin-bottom: 0.45rem;
-                border-radius: 15px;
+                min-height: 145px;
+                padding: 1.0rem 1.35rem;
+                margin-bottom: 0.7rem;
             }
 
             .ksp-hero-title {
-                font-size: clamp(1.95rem, 2.8vw, 2.75rem);
+                font-size: clamp(2.0rem, 3vw, 2.9rem);
             }
 
             .ksp-hero-subtitle {
-                font-size: 0.92rem;
-                margin-top: 0.2rem;
+                font-size: 0.95rem;
+                margin-top: 0.3rem;
             }
 
             .ksp-section-title {
-                margin-top: 0.45rem;
-                padding: 0 0 0.18rem 0;
-                font-size: 1.18rem;
+                margin-top: 0.75rem;
+                padding-bottom: 0.3rem;
+                font-size: 1.25rem;
             }
 
             div[data-testid="stFileUploader"] {
-                padding-top: 0.32rem;
-                padding-bottom: 0.22rem;
+                padding-top: 0.38rem;
+                padding-bottom: 0.25rem;
             }
 
             div[data-testid="stFileUploader"] section {
-                min-height: 52px !important;
-                padding: 0.30rem !important;
+                padding: 0.38rem !important;
+                min-height: 58px !important;
             }
 
             div[data-testid="stTextInput"] {
@@ -386,65 +345,48 @@ def apply_styles():
             }
 
             section[data-testid="stSidebar"] > div {
-                padding-top: 0.8rem;
+                padding-top: 0.9rem;
             }
         }
 
-        /* Veľmi nízke okná – napr. notebook s lištami prehliadača */
-        @media (max-height: 760px) {
+        @media (max-height: 800px) {
+            .stAppViewContainer .main .block-container {
+                padding-top: 0.45rem;
+                padding-bottom: 0.8rem;
+            }
+
             .ksp-hero {
-                min-height: 92px;
-                padding: 0.55rem 1rem;
+                min-height: 115px;
+                padding: 0.75rem 1.1rem;
+                margin-bottom: 0.45rem;
+                border-radius: 15px;
             }
 
             .ksp-hero-title {
-                font-size: 1.9rem;
+                font-size: clamp(1.8rem, 2.7vw, 2.45rem);
             }
 
             .ksp-hero-subtitle {
-                font-size: 0.84rem;
+                font-size: 0.88rem;
+                margin-top: 0.2rem;
             }
 
             .ksp-section-title {
-                margin-top: 0.3rem;
-                font-size: 1.08rem;
+                margin-top: 0.45rem;
+                padding-bottom: 0.18rem;
+                font-size: 1.14rem;
+            }
+
+            div[data-testid="stFileUploader"] {
+                padding-top: 0.28rem;
+                padding-bottom: 0.18rem;
             }
 
             div[data-testid="stFileUploader"] section {
-                min-height: 46px !important;
-                padding: 0.22rem !important;
+                padding: 0.28rem !important;
+                min-height: 50px !important;
             }
         }
-
-        /* Užšie okná/tablety: obsah sa prispôsobí šírke */
-        @media (max-width: 1200px) {
-            .block-container {
-                width: 96vw;
-                padding-left: 0.9rem;
-                padding-right: 0.9rem;
-            }
-
-            .ksp-hero-subtitle {
-                max-width: 72%;
-            }
-        }
-
-        @media (max-width: 800px) {
-            .block-container {
-                width: 98vw;
-                padding-left: 0.55rem;
-                padding-right: 0.55rem;
-            }
-
-            .ksp-hero {
-                background-position: 62% center;
-            }
-
-            .ksp-hero-subtitle {
-                max-width: 92%;
-            }
-        }
-
 
         /* Scrollbar */
         ::-webkit-scrollbar {
