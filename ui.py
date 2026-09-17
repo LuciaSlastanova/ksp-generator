@@ -49,9 +49,12 @@ def apply_styles():
         }
 
         .block-container {
-            max-width: 1500px;
+            width: 92% !important;
+            max-width: 1700px !important;
             padding-top: 2rem;
             padding-bottom: 3rem;
+            padding-left: 1.5rem;
+            padding-right: 1.5rem;
         }
 
         /* Streamlit horný header - odstránenie bieleho pásu */
@@ -292,6 +295,70 @@ def apply_styles():
             color: #9fb2d6;
             font-size: 0.88rem;
             letter-spacing: 0.01em;
+        }
+
+        /* Responzívne rozloženie podľa šírky obrazovky */
+        @media (min-width: 1700px) {
+            .block-container {
+                width: 88% !important;
+                max-width: 1750px !important;
+            }
+        }
+
+        /* Bežný 15" notebook / Full HD */
+        @media (min-width: 1200px) and (max-width: 1699px) {
+            .block-container {
+                width: 94% !important;
+                max-width: none !important;
+                padding-left: 1.5rem;
+                padding-right: 1.5rem;
+            }
+
+            .ksp-section-title {
+                font-size: 1.5rem;
+            }
+
+            .ksp-hero-subtitle {
+                font-size: 1.08rem;
+            }
+        }
+
+        /* Menší notebook / tablet */
+        @media (max-width: 1199px) {
+            .block-container {
+                width: 96% !important;
+                max-width: none !important;
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+
+            .ksp-hero {
+                min-height: 180px;
+                padding: 1.3rem;
+            }
+
+            .ksp-hero-subtitle {
+                max-width: 75%;
+            }
+        }
+
+        /* Veľmi úzka obrazovka */
+        @media (max-width: 700px) {
+            .block-container {
+                width: 98% !important;
+                padding-left: 0.65rem;
+                padding-right: 0.65rem;
+            }
+
+            .ksp-hero {
+                min-height: 155px;
+                padding: 1rem;
+            }
+
+            .ksp-hero-subtitle {
+                max-width: 100%;
+                font-size: 0.98rem;
+            }
         }
 
         /* Scrollbar */
