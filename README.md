@@ -12,3 +12,4 @@ Aplikácia na poloautomatickú tvorbu Kontrolných a skúšobných plánov pre s
 
 ## Technológie
 Python, Streamlit, pandas, openpyxl, Supabase, OpenAI API
+<img width="1888" height="927" alt="projek_ksp" src="https://github.com/user-attachments/assets/8f004f21-1c7d-4b96-8311-4aa2c3a0cc1b" />
