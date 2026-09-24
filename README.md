@@ -1,4 +1,3 @@
-# KSP Generator
 
 # KSP Generator
 
