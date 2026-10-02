@@ -6,3 +6,4 @@ python-docx
 pypdf
 supabase
 PyPDF2
+xlrd>=2.0.1
