@@ -1411,7 +1411,18 @@ def create_ksp_excel(
         process_template_row
     )
 
-    # Hlavičku prepíšeme ešte pred čistením dát.
+   # ==========================================================
+    # HLAVIČKA PROJEKTU
+    # ==========================================================
+
+    # Titulná strana
+    if "1.strana" in workbook.sheetnames:
+        update_project_header(
+            workbook["1.strana"],
+            metadata
+        )
+
+    # Hlavička samotného KSP, ak sú rovnaké údaje aj tam
     update_project_header(
         ksp_worksheet,
         metadata
