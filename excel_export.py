@@ -1241,7 +1241,6 @@ def build_output_rows(
     return current_excel_row
 
 
-
 # ==========================================================
 # ODBORNÁ KONTROLA - FAREBNÉ OZNAČENIE
 # ==========================================================
@@ -1253,7 +1252,7 @@ def apply_review_status(
 ):
     """
     KEEP              -> bez zmeny štýlu mustry
-    REMOVE_CANDIDATE  -> svetločervené zvýraznenie A:N
+    REMOVE_CANDIDATE -> svetločervené zvýraznenie A:N
     VERIFY            -> svetložlté zvýraznenie A:N
 
     Status sa nemení na automatické vymazanie.
@@ -1843,6 +1842,23 @@ def create_ksp_excel(
 
         index = (
             block_end_index + 1
+        )
+
+    # ----------------------------------------------------------
+    # ODSTRÁNENIE ZVYŠNÝCH RIADKOV MUSTRY POD VÝSLEDNÝM KSP
+    # ----------------------------------------------------------
+    # current_excel_row je prvý voľný riadok po poslednom
+    # vygenerovanom procese/subprocese.
+    #
+    # clear_data_area() síce vymazal pôvodné hodnoty, ale ponechal
+    # formátovanie (žlté/prázdne pripravené riadky). Preto ich teraz
+    # fyzicky odstránime zo zošita.
+    last_template_row = ksp_worksheet.max_row
+
+    if current_excel_row <= last_template_row:
+        ksp_worksheet.delete_rows(
+            current_excel_row,
+            last_template_row - current_excel_row + 1
         )
 
     output = io.BytesIO()
