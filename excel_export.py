@@ -829,7 +829,46 @@ def clear_unlabelled_header_rows(
 
     return first_candidate
 
+def update_first_page_header(
+    worksheet,
+    metadata
+):
 
+    if not metadata:
+        return
+
+    stavba = get_metadata_value(
+        metadata,
+        "stavba"
+    )
+
+    objekt = get_metadata_value(
+        metadata,
+        "objekt"
+    )
+
+    objednavatel = get_metadata_value(
+        metadata,
+        "objednavatel"
+    )
+
+    zhotovitel = get_metadata_value(
+        metadata,
+        "zhotovitel"
+    )
+
+    # Slovenské názvy - odstránime staré dvojjazyčné texty
+    worksheet["B11"] = "Názov stavby:"
+    worksheet["B12"] = "Číslo a názov objektu:"
+    worksheet["B13"] = "Objednávateľ:"
+    worksheet["B14"] = "Zhotoviteľ:"
+
+    # Údaje aktuálneho projektu
+    worksheet["D11"] = stavba
+    worksheet["D12"] = objekt
+    worksheet["D13"] = objednavatel
+    worksheet["D14"] = zhotovitel
+    
 def update_project_header(
     worksheet,
     metadata
@@ -1424,10 +1463,10 @@ def create_ksp_excel(
 
     # Titulná strana
     if "1.strana" in workbook.sheetnames:
-        update_project_header(
+        update_first_page_header(
             workbook["1.strana"],
             metadata
-        )
+    )
 
     # Hlavička samotného KSP, ak sú rovnaké údaje aj tam
     update_project_header(
