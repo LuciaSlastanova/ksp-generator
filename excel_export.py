@@ -638,18 +638,15 @@ def get_metadata_value(
 
     return value
 
-
 def find_exact_label(
     worksheet,
     labels
 ):
 
-    normalized_labels = {
-        normalize_text(
-            label
-        )
+    normalized_labels = [
+        normalize_text(label)
         for label in labels
-    }
+    ]
 
     for row in range(
         1,
@@ -682,10 +679,20 @@ def find_exact_label(
                 cell.value
             )
 
-            if text in normalized_labels:
-                return cell
+            if not text:
+                continue
+
+            for label in normalized_labels:
+
+                if (
+                    text == label
+                    or text.startswith(label + " ")
+                    or text.startswith(label + " 1 ")
+                ):
+                    return cell
 
     return None
+
 
 
 def clear_row_right_of_label(
