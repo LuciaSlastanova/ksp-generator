@@ -1226,70 +1226,98 @@ a dokumentovanie prevezmi
 z relevantného riadku referenčného KSP.
 
 ===============================================
-E. MNOŽSTVO
+E. MNOŽSTVO - PRÍSNE PRAVIDLO
 ===============================================
 
-Množstvo ber z AGREGOVANÝCH POLOŽIEK
-CENOVEJ PONUKY, ktoré sú vložené do vstupu.
+JEDINÝM zdrojom množstva pre výsledný KSP sú
+AGREGOVANÉ POLOŽKY CENOVEJ PONUKY vložené do vstupu.
 
-Tieto agregované množstvá už boli spočítané
-Python kódom zo všetkých detailných hárkov.
+Agregovaný zoznam už vytvoril Python zo VŠETKÝCH
+detailných hárkov rozpočtu.
 
-Preto:
+PRETO JE ZAKÁZANÉ:
 
-- NESČÍTAVAJ ich znova,
-- NEBER množstvo z referenčného KSP,
-- NEBER množstvo z technickej správy,
-  ak už existuje agregovaná položka,
-- NEVYMÝŠĽAJ množstvo,
-- zachovaj presnú MJ.
+- sčítavať množstvá ručne,
+- odčítavať množstvá,
+- kombinovať dve alebo viac agregovaných položiek
+  do jedného množstva,
+- vyberať množstvo iba z jedného zdrojového hárku,
+- vracať sa k pôvodným riadkom rozpočtu,
+- používať množstvo z referenčného KSP,
+- používať množstvo z technickej správy,
+  ak existuje zodpovedajúca agregovaná položka,
+- meniť MJ.
 
-Ak je agregovaná položka napríklad:
+Každé číselné množstvo vo výslednom KSP musí byť
+dohľadateľné ako PRESNÁ hodnota jednej agregovanej
+položky cenovej ponuky.
 
-položka=Lôžko pod potrubie...
-množstvo=504.618
-MJ=m3
+Ak sú v agregovanom zozname technicky rozdielne
+položky, NESMIEŠ ich svojvoľne spočítať.
 
-výsledný KSP musí mať:
+Ak technický rozdiel ovplyvňuje význam položky,
+technológiu, kontrolu alebo skúšku,
+vytvor samostatné subprocesy.
 
-mnozstvo = "504,618 m3"
+Ak množstvo pre konkrétny subproces v agregovanom
+zozname neexistuje, pole množstvo nechaj prázdne.
 
-Ak množstvo pre konkrétny subproces
-v agregovanom zozname neexistuje,
-pole môže zostať prázdne.
+NEVYMÝŠĽAJ množstvo.
 
-VÝNIMKA - POČET CELÝCH OBJEKTOV:
+===============================================
+E2. KONTROLA POKRYTIA ROZPOČTU
+===============================================
 
-Ak KSP kontrola pracuje s celými objektmi,
-napríklad:
-- každá kanalizačná šachta,
-- každá čerpacia stanica,
-- každý rozvádzač,
+Pred vytvorením výsledku prejdi VŠETKY agregované
+položky cenovej ponuky.
 
-a agregovaný rozpočet nemá jednu všeobecnú položku
-s týmto počtom, NESČÍTAJ jednotlivé komponenty objektu.
+Nevynechaj významnú realizačnú položku iba preto,
+že v referenčnom KSP nemá úplne rovnaký názov.
 
-Ak je počet celých objektov jednoznačne uvedený
-v projektovej dokumentácii alebo ho možno priamo
-a bez odhadu určiť z projektových podkladov,
-použi počet celých objektov.
+Za významnú položku považuj najmä takú, ktorá:
 
-Príklad:
-5 skruží + 5 dien + 5 poklopov
-neznamená 15 šácht.
-Ak projekt obsahuje 5 šácht,
-množstvo kontroly "každá šachta" je 5 ks.
+- predstavuje samostatnú stavebnú, montážnu,
+  technologickú alebo dokončovaciu činnosť,
+- predstavuje samostatný výrobok, konštrukciu,
+  zariadenie alebo systém zabudovaný do stavby,
+- má významné množstvo alebo rozsah,
+- má vlastný technický parameter, triedu,
+  materiál, rozmer, DN, hrúbku alebo typ,
+- vyžaduje samostatnú kontrolu, skúšku,
+  revíziu, meranie alebo preberanie,
+- ovplyvňuje kvalitu, bezpečnosť,
+  funkčnosť alebo životnosť stavby,
+- predstavuje samostatnú profesiu alebo etapu prác,
+- alebo by jej vynechanie spôsobilo,
+  že KSP nepokrýva podstatnú časť rozpočtu.
 
-Ak agregovaná položka obsahuje pole "warnings"
-alebo upozornenie na podozrivé množstvo:
-- množstvo svojvoľne neopravuj,
-- nevymýšľaj náhradné množstvo,
-- upozornenie nestrácaj,
-- do poznámky výsledného relevantného riadku napíš
-  stručne "OVERIŤ MNOŽSTVO V CP",
-  ak by podozrivé množstvo malo ovplyvniť KSP.
+Významnosť neposudzuj iba podľa ceny alebo množstva.
 
-NEPÍŠ automaticky OVERIŤ iba kvôli bežnej neistote.
+Aj položka s malým množstvom môže byť významná,
+ak ide o technicky, funkčne alebo bezpečnostne
+dôležitú časť stavby.
+
+Typ stavby môže byť ľubovoľný.
+
+Nespoliehaj sa na pevný zoznam profesií.
+Rozhoduj podľa technického významu položky
+v konkrétnom projekte.
+
+Ak sa významná položka nachádza v rozpočte,
+ale referenčný KSP pre ňu nemá samostatný riadok:
+
+1. priraď ju k najbližšiemu relevantnému
+   subprocesu z referenčného KSP,
+
+ALEBO
+
+2. vytvor samostatný subproces s kontrolou
+   prevzatou z významovo najbližšej položky
+   referenčného KSP.
+
+Nevymýšľaj pritom novú skúšku ani normu.
+
+
 
 ===============================================
 F. OVERIŤ - VEĽMI DÔLEŽITÉ
