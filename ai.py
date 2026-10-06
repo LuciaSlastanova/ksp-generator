@@ -1111,30 +1111,79 @@ a rovnaká práca sa vykonáva aj na novom projekte,
 použi príslušný riadok referenčného KSP.
 
 ===============================================
-C. NEZJEDNODUŠUJ HRUBÝ ŠÚR
+C. NEZJEDNODUŠUJ REFERENČNÝ KSP
 ===============================================
 
 Referenčný KSP môže obsahovať viac samostatných
-riadkov pre jednu skupinu prác.
+riadkov pre jednu skupinu prác alebo dokonca
+VIAC KONTROLNÝCH RIADKOV PRE TEN ISTÝ SUBPROCES.
 
 Tieto riadky svojvoľne nespájaj.
 
-Ak referenčný KSP obsahuje samostatné kontroly pre:
+DÔLEŽITÉ:
+JEDEN SUBPROCES NEZNAMENÁ JEDEN JSON RIADOK.
 
-- vytýčenie
-- výkop
-- lôžko
-- potrubie
-- tvarovky
-- tesnenia
-- revízne šachty
-- obsyp
-- zásyp
-- hutnenie
-- skúšku
+Ak má napríklad subproces:
 
-zachovaj podobné členenie,
-ak sa tieto práce nachádzajú aj v novom projekte.
+"Podklad z betónu C20/25"
+
+v referenčnom KSP 4 samostatné kontroly:
+
+1. kontrola dokladov / preukazná kontrola,
+2. skúška konzistencie,
+3. kontrola teploty,
+4. skúška pevnosti v tlaku,
+
+a tento betón sa nachádza aj v novom projekte,
+vytvor 4 samostatné JSON riadky.
+
+Vo všetkých môže byť rovnaký:
+- proces,
+- subproces,
+- množstvo,
+
+ale každý riadok musí mať vlastný:
+- druh kontroly,
+- spôsob kontroly,
+- kritérium,
+- početnosť,
+- celkový počet,
+- zodpovednosť,
+- vykonávateľa,
+- toleranciu,
+- dokumentovanie,
+- poznámku.
+
+NESMIEŠ štyri referenčné kontroly zlúčiť
+do jedného všeobecného riadku.
+
+Rovnako zachovaj samostatné kontroly pre:
+- vytýčenie,
+- výkop,
+- lôžko,
+- potrubie,
+- tvarovky,
+- tesnenia,
+- revízne šachty,
+- obsyp,
+- zásyp,
+- hutnenie,
+- betóny,
+- asfaltové vrstvy,
+- elektro,
+- skúšky,
+- zamerania a preberanie,
+
+ak sú relevantné pre nový projekt.
+
+Ak sa v novom projekte nachádza viac technicky
+odlišných variantov toho istého druhu práce,
+napríklad C12/15, C20/25 a C30/37,
+NESMIEŠ ich zlúčiť do jedného subprocesu.
+
+Každý technicky odlišný variant musí zostať
+samostatný a musí dostať všetky relevantné
+kontrolné riadky z referenčného KSP.
 
 Výsledný KSP sa má pri porovnaní
 s referenčným KSP obsahovo podobať.
@@ -1209,7 +1258,38 @@ Ak množstvo pre konkrétny subproces
 v agregovanom zozname neexistuje,
 pole môže zostať prázdne.
 
-NEPÍŠ automaticky OVERIŤ.
+VÝNIMKA - POČET CELÝCH OBJEKTOV:
+
+Ak KSP kontrola pracuje s celými objektmi,
+napríklad:
+- každá kanalizačná šachta,
+- každá čerpacia stanica,
+- každý rozvádzač,
+
+a agregovaný rozpočet nemá jednu všeobecnú položku
+s týmto počtom, NESČÍTAJ jednotlivé komponenty objektu.
+
+Ak je počet celých objektov jednoznačne uvedený
+v projektovej dokumentácii alebo ho možno priamo
+a bez odhadu určiť z projektových podkladov,
+použi počet celých objektov.
+
+Príklad:
+5 skruží + 5 dien + 5 poklopov
+neznamená 15 šácht.
+Ak projekt obsahuje 5 šácht,
+množstvo kontroly "každá šachta" je 5 ks.
+
+Ak agregovaná položka obsahuje pole "warnings"
+alebo upozornenie na podozrivé množstvo:
+- množstvo svojvoľne neopravuj,
+- nevymýšľaj náhradné množstvo,
+- upozornenie nestrácaj,
+- do poznámky výsledného relevantného riadku napíš
+  stručne "OVERIŤ MNOŽSTVO V CP",
+  ak by podozrivé množstvo malo ovplyvniť KSP.
+
+NEPÍŠ automaticky OVERIŤ iba kvôli bežnej neistote.
 
 ===============================================
 F. OVERIŤ - VEĽMI DÔLEŽITÉ
@@ -1407,6 +1487,36 @@ Konkrétny výrobok, materiál,
 DN a množstvo prispôsob novému projektu.
 
 ===============================================
+M2. ZAMERANIA, PREBERACIE KONTROLY A SKÚŠKY
+===============================================
+
+Zamerania a preberacie kontroly nepovažuj
+za duplicitné iba preto, že nemajú samostatnú
+položku v cenovej ponuke.
+
+Ak referenčný KSP obsahuje zameranie hotového celku
+a nový projekt obsahuje príslušnú konštrukciu,
+zachovaj tento riadok.
+
+Príklady:
+- asfaltová plocha -> zameranie hotového asfaltového celku,
+- kanalizačné potrubie a zariadenia -> zameranie skutočného stavu,
+- tlakové potrubie -> tlaková skúška,
+- gravitačná kanalizácia -> skúška tesnosti,
+ak sú tieto kontroly alebo skúšky relevantné
+podľa referenčného KSP a projektu.
+
+Dve rozdielne zamerania NESMIEŠ zlúčiť iba preto,
+že obe vykonáva geodet.
+
+Napríklad:
+- zameranie hotového povrchu komunikácie,
+- zameranie skutočného stavu kanalizácie
+
+sú dva rozdielne účely kontroly a môžu zostať
+ako dva samostatné riadky.
+
+===============================================
 N. PORADIE
 ===============================================
 
@@ -1485,10 +1595,30 @@ D. KONTROLA REFERENCIE
 Výsledok má byť adaptáciou referenčného KSP,
 nie jeho zjednodušenou skrátenou verziou.
 
-Ak má relevantný referenčný subproces viac kontrolných
-riadkov, zachovaj všetky relevantné riadky,
-pokiaľ ich vedome neoznačíš ako REMOVE_CANDIDATE
-alebo VERIFY podľa pravidiel vyššie.
+Pre každý relevantný subproces v novom projekte
+nájdi všetky zodpovedajúce kontrolné riadky
+v referenčnom KSP.
+
+Ak má relevantný referenčný subproces napríklad
+4 samostatné kontrolné riadky,
+výsledok má mať spravidla tiež 4 samostatné riadky
+pre tento subproces.
+
+NESMIEŠ:
+- ponechať iba prvý referenčný riadok,
+- zlúčiť viac druhov kontroly do jedného riadku,
+- vynechať skúšku konzistencie, teploty alebo pevnosti
+  iba preto, že už existuje kontrola dokladov,
+- vynechať zameranie alebo preberaciu kontrolu
+  iba preto, že nemá samostatnú rozpočtovú položku.
+
+Riadok môžeš vynechať iba ak:
+- daná práca alebo materiál v novom projekte nie sú,
+- kontrola je technicky nepoužiteľná pre nový projekt,
+- alebo pravidlá vyššie odôvodňujú REMOVE_CANDIDATE / VERIFY.
+
+Ak ho ponecháš ako REMOVE_CANDIDATE alebo VERIFY,
+riadok stále musí zostať vo výslednom JSON.
 
 ===============================================
 O. ZAKÁZANÉ
@@ -1653,6 +1783,14 @@ Formát:
 Pred odoslaním JSON:
 - skontroluj, že relevantné agregované položky neboli vynechané,
 - skontroluj, že množstvá sú z agregovaného rozpočtu,
+- skontroluj, že jeden subproces nebol nesprávne zredukovaný
+  iba na jeden kontrolný riadok,
+- porovnaj počet relevantných kontrol daného subprocesu
+  s referenčným KSP,
+- skontroluj, že neboli vynechané relevantné zamerania,
+  skúšky a preberacie kontroly,
+- skontroluj, že technicky rozdielne triedy alebo materiály
+  neboli zlúčené,
 - skontroluj, že polia kriterium, zodpoveda, vykona,
   tolerancia a dokumentovanie nie sú prázdne,
   ak ich obsahuje relevantný referenčný riadok,
