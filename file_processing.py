@@ -2,6 +2,7 @@ import io
 import re
 import math
 import unicodedata
+from collections import Counter
 from difflib import SequenceMatcher
 
 import pandas as pd
@@ -113,15 +114,25 @@ def _normalize_unit(value):
     unit_map = {
         "m²": "m2",
         "m2": "m2",
+
         "m³": "m3",
         "m3": "m3",
+
         "ks": "ks",
         "kus": "ks",
         "kusy": "ks",
+
         "kompl": "kompl",
         "komplet": "kompl",
+
         "súbor": "subor",
         "subor": "subor",
+
+        "t": "t",
+        "kg": "kg",
+        "m": "m",
+        "l": "l",
+        "hod": "hod",
     }
 
     return unit_map.get(
@@ -130,18 +141,565 @@ def _normalize_unit(value):
     )
 
 
+def _cell_text(value):
+    if value is None:
+        return ""
+
+    if pd.isna(value):
+        return ""
+
+    return str(
+        value
+    ).strip()
+
+
 # ==========================================================
-# ČÍTANIE PDF / DOCX / EXCEL PRE OSTATNÉ ČASTI APPKY
+# IDENTIFIKÁCIA PROJEKTU / FILTROVANIE CUDZÍCH HÁRKOV
 # ==========================================================
 
-def extract_text_from_pdf(file_bytes):
+_PROJECT_LABELS = {
+    "stavba",
+    "nazov stavby",
+    "názov stavby",
+    "akcia",
+    "nazov akcie",
+    "názov akcie",
+}
+
+
+_PROJECT_GENERIC_WORDS = {
+    "stavba",
+    "nazov",
+    "akcia",
+    "projekt",
+    "projektova",
+    "projektovej",
+    "dokumentacia",
+    "realizacia",
+    "zmena",
+    "dodatok",
+    "dod",
+    "komplet",
+
+    "kanalizacia",
+    "kanalizacna",
+    "kanalizacne",
+    "splaskova",
+    "stokova",
+    "siet",
+    "siete",
+
+    "cs",
+    "cerpacia",
+    "cerpacej",
+    "stanica",
+    "stanice",
+
+    "vodovod",
+    "vodovodna",
+    "pripojka",
+    "pripojky",
+
+    "vytlak",
+    "vytlacne",
+    "potrubie",
+
+    "odvedenie",
+    "odpadovych",
+    "vod",
+
+    "etapa",
+    "dokoncienie",
+    "dokonceni",
+
+    "objekt",
+    "stavebny",
+    "so",
+    "cast",
+
+    "rekonstrukcia",
+    "rekonstrukcie",
+    "budovanie",
+    "vystavba",
+    "realizacny",
+}
+
+
+def _project_tokens(value):
+    """
+    Z názvu projektu vyberie výrazné tokeny.
+
+    Napríklad:
+
+    Abrahám - splašková kanalizácia a ČS,
+    zmena č. 2
+
+    -> {"abraham"}
+
+    Všeobecné slová ako kanalizácia,
+    ČS, stavba, zmena atď. ignorujeme.
+    """
+
+    text = _normalize_text(
+        value
+    )
+
+    words = re.findall(
+        r"[a-z0-9]+",
+        text
+    )
+
+    tokens = []
+
+    for word in words:
+
+        if len(word) < 3:
+            continue
+
+        if word.isdigit():
+            continue
+
+        if word in _PROJECT_GENERIC_WORDS:
+            continue
+
+        tokens.append(
+            word
+        )
+
+    return set(
+        tokens
+    )
+
+
+def _extract_project_labels_from_sheet(
+    dataframe,
+    max_rows=45,
+    max_cols=14
+):
+    """
+    Hľadá názov stavby iba v hornej časti hárku.
+
+    Podporuje napr.:
+
+    Stavba | Abrahám - splašková kanalizácia
+
+    Stavba: Abrahám - splašková kanalizácia
+
+    Názov stavby | ...
+    """
+
+    found = []
+
+    row_limit = min(
+        len(dataframe),
+        max_rows
+    )
+
+    col_limit = min(
+        len(dataframe.columns),
+        max_cols
+    )
+
+    normalized_project_labels = {
+        _normalize_text(label)
+        for label in _PROJECT_LABELS
+    }
+
+    for row_index in range(
+        row_limit
+    ):
+
+        raw_values = [
+            _cell_text(
+                dataframe.iloc[
+                    row_index,
+                    col_index
+                ]
+            )
+            for col_index in range(
+                col_limit
+            )
+        ]
+
+        normalized_values = [
+            _normalize_text(value)
+            for value in raw_values
+        ]
+
+        for col_index, normalized in enumerate(
+            normalized_values
+        ):
+
+            if not normalized:
+                continue
+
+            # ----------------------------------------------
+            # Prípad:
+            # Stavba: Abrahám ...
+            # ----------------------------------------------
+
+            same_cell_match = re.match(
+                (
+                    r"^(stavba|nazov stavby|akcia|nazov akcie)"
+                    r"\s*[:\-]\s*(.+)$"
+                ),
+                normalized,
+                flags=re.IGNORECASE
+            )
+
+            if same_cell_match:
+
+                value = (
+                    same_cell_match
+                    .group(2)
+                    .strip()
+                )
+
+                if value:
+                    found.append(
+                        value
+                    )
+
+                continue
+
+            # ----------------------------------------------
+            # Prípad:
+            # Stavba | Abrahám ...
+            # ----------------------------------------------
+
+            if normalized in normalized_project_labels:
+
+                for next_col in range(
+                    col_index + 1,
+                    col_limit
+                ):
+
+                    candidate = (
+                        raw_values[
+                            next_col
+                        ]
+                        .strip()
+                    )
+
+                    if candidate:
+                        found.append(
+                            candidate
+                        )
+                        break
+
+    # odstránenie duplicít,
+    # zachovanie pôvodného poradia
+
+    unique = []
+    seen = set()
+
+    for value in found:
+
+        normalized = (
+            _normalize_text(
+                value
+            )
+        )
+
+        if (
+            normalized
+            and normalized not in seen
+        ):
+            seen.add(
+                normalized
+            )
+
+            unique.append(
+                value
+            )
+
+    return unique
+
+
+def _detect_primary_project_tokens(
+    sheets,
+    project_hint=None
+):
+    """
+    Určí hlavný projekt workbooku.
+
+    Najlepšie je, keď appka pozná názov stavby
+    a pošle ho cez project_hint.
+
+    Ak nie, použije sa názov stavby,
+    ktorý sa najčastejšie opakuje
+    v hlavičkách jednotlivých hárkov.
+
+    Ak výsledok nie je dostatočne istý,
+    nič automaticky nevyradíme.
+    """
+
+    # ======================================================
+    # 1. NÁZOV STAVBY DODANÝ APPKOU
+    # ======================================================
+
+    if project_hint:
+
+        hint_tokens = (
+            _project_tokens(
+                project_hint
+            )
+        )
+
+        if hint_tokens:
+            return hint_tokens
+
+    # ======================================================
+    # 2. AUTOMATICKÉ URČENIE Z EXCELU
+    # ======================================================
+
+    counter = Counter()
+
+    sheets_with_project_label = 0
+
+    for dataframe in sheets.values():
+
+        labels = (
+            _extract_project_labels_from_sheet(
+                dataframe
+            )
+        )
+
+        if not labels:
+            continue
+
+        sheets_with_project_label += 1
+
+        sheet_tokens = set()
+
+        for label in labels:
+
+            sheet_tokens.update(
+                _project_tokens(
+                    label
+                )
+            )
+
+        for token in sheet_tokens:
+
+            counter[
+                token
+            ] += 1
+
+    if not counter:
+        return set()
+
+    ranked = (
+        counter.most_common()
+    )
+
+    top_token, top_count = (
+        ranked[0]
+    )
+
+    second_count = (
+        ranked[1][1]
+        if len(ranked) > 1
+        else 0
+    )
+
+    # Musí byť aspoň na dvoch hárkoch.
+
+    if top_count < 2:
+        return set()
+
+    # Ak je remíza,
+    # nevieme bezpečne určiť projekt.
+
+    if top_count == second_count:
+        return set()
+
+    if sheets_with_project_label < 2:
+        return set()
+
+    return {
+        top_token
+    }
+
+
+def _sheet_project_status(
+    dataframe,
+    primary_project_tokens
+):
+    """
+    Výstup:
+
+    relevant
+        = hárok explicitne patrí projektu
+
+    foreign
+        = hárok explicitne uvádza inú stavbu
+
+    unknown
+        = názov stavby z hárku nevieme určiť
+    """
+
+    labels = (
+        _extract_project_labels_from_sheet(
+            dataframe
+        )
+    )
+
+    if (
+        not labels
+        or not primary_project_tokens
+    ):
+        return (
+            "unknown",
+            labels
+        )
+
+    tokens = set()
+
+    for label in labels:
+
+        tokens.update(
+            _project_tokens(
+                label
+            )
+        )
+
+    if not tokens:
+        return (
+            "unknown",
+            labels
+        )
+
+    if tokens.intersection(
+        primary_project_tokens
+    ):
+        return (
+            "relevant",
+            labels
+        )
+
+    return (
+        "foreign",
+        labels
+    )
+
+
+def inspect_budget_sheets_python(
+    file_bytes,
+    project_hint=None
+):
+    """
+    Diagnostická funkcia.
+
+    Ukáže:
+    - hlavný projekt,
+    - ktoré hárky sú relevantné,
+    - ktoré vyzerajú ako cudzie,
+    - ktoré nevieme určiť.
+
+    Nič sama nemení.
+    """
+
+    sheets = pd.read_excel(
+        io.BytesIO(
+            file_bytes
+        ),
+        sheet_name=None,
+        header=None,
+        dtype=object
+    )
+
+    primary_tokens = (
+        _detect_primary_project_tokens(
+            sheets,
+            project_hint=project_hint
+        )
+    )
+
+    result = []
+
+    for sheet_name, dataframe in sheets.items():
+
+        normalized_sheet_name = (
+            _normalize_text(
+                sheet_name
+            )
+        )
+
+        # ----------------------------------------------
+        # Rekapitulácie
+        # ----------------------------------------------
+
+        if "rekapitul" in normalized_sheet_name:
+
+            result.append(
+                {
+                    "sheet":
+                        str(
+                            sheet_name
+                        ),
+
+                    "status":
+                        "skip_recap",
+
+                    "project_labels":
+                        []
+                }
+            )
+
+            continue
+
+        status, labels = (
+            _sheet_project_status(
+                dataframe,
+                primary_tokens
+            )
+        )
+
+        result.append(
+            {
+                "sheet":
+                    str(
+                        sheet_name
+                    ),
+
+                "status":
+                    status,
+
+                "project_labels":
+                    labels
+            }
+        )
+
+    return {
+        "primary_project_tokens":
+            sorted(
+                primary_tokens
+            ),
+
+        "sheets":
+            result
+    }
+
+
+# ==========================================================
+# ČÍTANIE PDF / DOCX / EXCEL
+# PRE OSTATNÉ ČASTI APPKY
+# ==========================================================
+
+def extract_text_from_pdf(
+    file_bytes
+):
     try:
         from pypdf import PdfReader
+
     except ImportError:
         from PyPDF2 import PdfReader
 
     reader = PdfReader(
-        io.BytesIO(file_bytes)
+        io.BytesIO(
+            file_bytes
+        )
     )
 
     parts = []
@@ -150,6 +708,7 @@ def extract_text_from_pdf(file_bytes):
         reader.pages,
         start=1
     ):
+
         text = (
             page.extract_text()
             or ""
@@ -164,17 +723,25 @@ def extract_text_from_pdf(file_bytes):
     )
 
 
-def extract_text_from_docx(file_bytes):
+def extract_text_from_docx(
+    file_bytes
+):
     from docx import Document
 
     document = Document(
-        io.BytesIO(file_bytes)
+        io.BytesIO(
+            file_bytes
+        )
     )
 
     parts = []
 
     for paragraph in document.paragraphs:
-        text = paragraph.text.strip()
+
+        text = (
+            paragraph.text
+            .strip()
+        )
 
         if text:
             parts.append(
@@ -185,19 +752,25 @@ def extract_text_from_docx(file_bytes):
         document.tables,
         start=1
     ):
+
         parts.append(
             f"\n--- TABUĽKA {table_number} ---"
         )
 
         for row in table.rows:
+
             values = [
                 cell.text.strip()
                 for cell in row.cells
             ]
 
-            if any(values):
+            if any(
+                values
+            ):
                 parts.append(
-                    " | ".join(values)
+                    " | ".join(
+                        values
+                    )
                 )
 
     return "\n".join(
@@ -205,9 +778,13 @@ def extract_text_from_docx(file_bytes):
     )
 
 
-def extract_excel_rows(file_bytes):
+def extract_excel_rows(
+    file_bytes
+):
     sheets = pd.read_excel(
-        io.BytesIO(file_bytes),
+        io.BytesIO(
+            file_bytes
+        ),
         sheet_name=None,
         header=None,
         dtype=object
@@ -223,11 +800,18 @@ def extract_excel_rows(file_bytes):
 
             for value in row.tolist():
 
-                if pd.isna(value):
-                    values.append("")
+                if pd.isna(
+                    value
+                ):
+                    values.append(
+                        ""
+                    )
+
                 else:
                     values.append(
-                        str(value).strip()
+                        str(
+                            value
+                        ).strip()
                     )
 
             if not any(
@@ -238,20 +822,28 @@ def extract_excel_rows(file_bytes):
 
             result.append(
                 {
-                    "sheet": str(
-                        sheet_name
-                    ),
-                    "row_number": int(
-                        dataframe_index
-                    ) + 1,
-                    "values": values
+                    "sheet":
+                        str(
+                            sheet_name
+                        ),
+
+                    "row_number":
+                        int(
+                            dataframe_index
+                        )
+                        + 1,
+
+                    "values":
+                        values
                 }
             )
 
     return result
 
 
-def extract_text_from_excel(file_bytes):
+def extract_text_from_excel(
+    file_bytes
+):
     rows = extract_excel_rows(
         file_bytes
     )
@@ -260,6 +852,7 @@ def extract_text_from_excel(file_bytes):
         return ""
 
     parts = []
+
     current_sheet = None
 
     for row in rows:
@@ -270,7 +863,10 @@ def extract_text_from_excel(file_bytes):
         )
 
         if sheet != current_sheet:
-            current_sheet = sheet
+
+            current_sheet = (
+                sheet
+            )
 
             parts.append(
                 f"\n--- LIST: {sheet} ---"
@@ -299,32 +895,202 @@ def extract_text_from_excel(file_bytes):
 
 
 # ==========================================================
+# KATEGORIZÁCIA POLOŽIEK
+# ==========================================================
+
+def _infer_budget_category(
+    description
+):
+    """
+    Jednoduchá technická kategorizácia bez AI.
+
+    Hlavný účel:
+
+    NESPOJIŤ napr.:
+
+    Obsyp potrubia
+    +
+    Dodávka piesku na obsyp
+    """
+
+    text = (
+        _normalize_text(
+            description
+        )
+    )
+
+    # ======================================================
+    # SKÚŠKY / MERANIA
+    # ======================================================
+
+    if any(
+        token in text
+        for token in [
+            "skuska",
+            "meranie",
+            "revizia",
+            "prehliadka",
+            "monitoring",
+            "kamerov",
+            "tlakova skuska",
+            "tesnost",
+        ]
+    ):
+        return "skuska"
+
+    # ======================================================
+    # MONTÁŽ
+    # ======================================================
+
+    if any(
+        token in text
+        for token in [
+            "montaz",
+            "osadenie",
+            "ulozenie",
+            "zriadenie",
+        ]
+    ):
+        return "montaz"
+
+    # ======================================================
+    # MATERIÁL
+    # ======================================================
+
+    if any(
+        token in text
+        for token in [
+            "dodavka",
+            "material",
+            "piesok",
+            "strkodrv",
+            "strkopiesok",
+            "kamenivo",
+            "poklop",
+            "skruz",
+            "sachtove dno",
+            "rura",
+            "potrubie",
+            "kabel",
+            "pas fezn",
+            "kari siet",
+            "vystuz",
+        ]
+    ):
+
+        # Niektoré názvy obsahujú materiál,
+        # ale v skutočnosti ide o prácu.
+
+        work_tokens = [
+            "obsyp",
+            "zasyp",
+            "vykop",
+            "hlbenie",
+            "hutnenie",
+            "betonaz",
+            "zhotovenie",
+            "rezanie",
+            "buranie",
+        ]
+
+        if not any(
+            token in text
+            for token in work_tokens
+        ):
+            return "material"
+
+    return "praca"
+
+
+# ==========================================================
 # 1. VŠEOBECNÉ NAČÍTANIE ROZPOČTU
 # ==========================================================
 
-def extract_budget_items_python(file_bytes):
+def extract_budget_items_python(
+    file_bytes,
+    project_hint=None,
+    include_unknown_sheets=True
+):
     """
     VŠEOBECNÁ funkcia.
 
-    V každom hárku hľadá tabuľku s hlavičkami:
+    V každom hárku hľadá tabuľku:
+
     Kód | Popis | MJ | Množstvo
 
-    Nezávisí od názvu projektu ani od typu stavby.
+    NOVÉ:
 
-    Rekapitulácie preskočí, aby sa položky
-    nespočítali druhýkrát.
+    - ak sa dá spoľahlivo určiť hlavný projekt,
+      explicitne cudzie hárky sa preskočia,
+
+    - hárky bez rozpoznateľného názvu stavby
+      sa NEVYHADZUJÚ,
+
+    - práca a materiál sa rozlišujú,
+
+    - kód položky môže byť pri staršom
+      rozpočte prázdny.
+
+    Rekapitulácie sa preskočia.
 
     NEVOLÁ AI.
     """
 
     sheets = pd.read_excel(
-        io.BytesIO(file_bytes),
+        io.BytesIO(
+            file_bytes
+        ),
         sheet_name=None,
         header=None,
         dtype=object
     )
 
+    primary_project_tokens = (
+        _detect_primary_project_tokens(
+            sheets,
+            project_hint=project_hint
+        )
+    )
+
     items = []
+
+    aliases = {
+        "kod": {
+            "kod",
+            "kód"
+        },
+
+        "popis": {
+            "popis",
+            "nazov",
+            "názov",
+            "popis polozky",
+            "nazov polozky"
+        },
+
+        "mj": {
+            "mj",
+            "m.j.",
+            "merna jednotka",
+            "merná jednotka"
+        },
+
+        "mnozstvo": {
+            "mnozstvo",
+            "množstvo"
+        }
+    }
+
+    normalized_aliases = {
+        key: {
+            _normalize_text(
+                value
+            )
+            for value in values
+        }
+        for key, values
+        in aliases.items()
+    }
 
     for sheet_name, dataframe in sheets.items():
 
@@ -334,10 +1100,41 @@ def extract_budget_items_python(file_bytes):
             )
         )
 
-        # Rekapitulačný hárok zvyčajne obsahuje už
-        # súčty detailných hárkov.
+        # ==================================================
+        # REKAPITULÁCIA
+        # ==================================================
+
         if "rekapitul" in normalized_sheet_name:
             continue
+
+        # ==================================================
+        # KONTROLA PROJEKTU HÁRKU
+        # ==================================================
+
+        project_status, project_labels = (
+            _sheet_project_status(
+                dataframe,
+                primary_project_tokens
+            )
+        )
+
+        # Vyhadzujeme iba hárok,
+        # ktorý EXPLICITNE uvádza inú stavbu.
+
+        if project_status == "foreign":
+            continue
+
+        # Unknown hárky bežne ponechávame.
+
+        if (
+            project_status == "unknown"
+            and not include_unknown_sheets
+        ):
+            continue
+
+        # ==================================================
+        # HĽADANIE HLAVIČKY TABUĽKY
+        # ==================================================
 
         header_row_index = None
         header_columns = None
@@ -345,53 +1142,41 @@ def extract_budget_items_python(file_bytes):
         for dataframe_index, row in dataframe.iterrows():
 
             normalized_values = [
-                _normalize_text(value)
-                for value in row.tolist()
+                _normalize_text(
+                    value
+                )
+                for value
+                in row.tolist()
             ]
 
             positions = {}
 
-            aliases = {
-                "kod": {
-                    "kod",
-                    "kód"
-                },
-                "popis": {
-                    "popis",
-                    "nazov",
-                    "názov",
-                    "popis polozky",
-                    "nazov polozky"
-                },
-                "mj": {
-                    "mj",
-                    "m.j.",
-                    "merna jednotka",
-                    "merná jednotka"
-                },
-                "mnozstvo": {
-                    "mnozstvo",
-                    "množstvo"
-                }
-            }
-
-            for target, accepted in aliases.items():
+            for target, accepted in normalized_aliases.items():
 
                 for index, cell_text in enumerate(
                     normalized_values
                 ):
-                    if cell_text in {
-                        _normalize_text(x)
-                        for x in accepted
-                    }:
-                        positions[target] = index
+
+                    if cell_text in accepted:
+
+                        positions[
+                            target
+                        ] = index
+
                         break
 
-            if len(positions) == 4:
+            if len(
+                positions
+            ) == 4:
+
                 header_row_index = int(
                     dataframe_index
                 )
-                header_columns = positions
+
+                header_columns = (
+                    positions
+                )
+
                 break
 
         if (
@@ -400,9 +1185,15 @@ def extract_budget_items_python(file_bytes):
         ):
             continue
 
+        # ==================================================
+        # ČÍTANIE POLOŽIEK
+        # ==================================================
+
         for dataframe_index in range(
             header_row_index + 1,
-            len(dataframe)
+            len(
+                dataframe
+            )
         ):
 
             row = dataframe.iloc[
@@ -410,19 +1201,27 @@ def extract_budget_items_python(file_bytes):
             ]
 
             code = row.iloc[
-                header_columns["kod"]
+                header_columns[
+                    "kod"
+                ]
             ]
 
             description = row.iloc[
-                header_columns["popis"]
+                header_columns[
+                    "popis"
+                ]
             ]
 
             unit = row.iloc[
-                header_columns["mj"]
+                header_columns[
+                    "mj"
+                ]
             ]
 
             quantity_raw = row.iloc[
-                header_columns["mnozstvo"]
+                header_columns[
+                    "mnozstvo"
+                ]
             ]
 
             quantity = _to_number(
@@ -433,15 +1232,14 @@ def extract_budget_items_python(file_bytes):
                 continue
 
             if (
-                pd.isna(code)
-                or pd.isna(description)
-                or pd.isna(unit)
+                pd.isna(
+                    description
+                )
+                or pd.isna(
+                    unit
+                )
             ):
                 continue
-
-            code = str(
-                code
-            ).strip()
 
             description = str(
                 description
@@ -451,41 +1249,388 @@ def extract_budget_items_python(file_bytes):
                 unit
             ).strip()
 
+            # ----------------------------------------------
+            # Staršie rozpočty môžu mať prázdny kód.
+            # ----------------------------------------------
+
+            if pd.isna(
+                code
+            ):
+                code = ""
+
+            else:
+                code = str(
+                    code
+                ).strip()
+
             if (
-                not code
-                or not description
+                not description
                 or not unit
+            ):
+                continue
+
+            # ----------------------------------------------
+            # Ochrana pred medzisúčtami
+            # ----------------------------------------------
+
+            normalized_description = (
+                _normalize_text(
+                    description
+                )
+            )
+
+            if any(
+                token in normalized_description
+                for token in [
+                    "medzisucet",
+                    "sucet",
+                    "spolu",
+                    "rekapitulacia",
+                    "dph",
+                ]
             ):
                 continue
 
             items.append(
                 {
-                    "sheet": str(
-                        sheet_name
-                    ),
-                    "row_number": (
+                    "sheet":
+                        str(
+                            sheet_name
+                        ),
+
+                    "row_number":
                         int(
                             dataframe_index
                         )
-                        + 1
-                    ),
-                    "code": code,
-                    "description": description,
-                    "unit": _normalize_unit(
-                        unit
-                    ),
-                    "quantity": quantity
+                        + 1,
+
+                    "code":
+                        code,
+
+                    "description":
+                        description,
+
+                    "unit":
+                        _normalize_unit(
+                            unit
+                        ),
+
+                    "quantity":
+                        quantity,
+
+                    "category":
+                        _infer_budget_category(
+                            description
+                        ),
+
+                    "sheet_project_status":
+                        project_status,
+
+                    "sheet_project_labels":
+                        project_labels,
+
+                    "warnings":
+                        []
                 }
             )
 
+    # ======================================================
+    # KONTROLA PODOZRIVÝCH MNOŽSTIEV
+    # ======================================================
+
+    _attach_suspicious_quantity_warnings(
+        items
+    )
+
     return items
+
+
+# ==========================================================
+# KONTROLA PODOZRIVÝCH MNOŽSTIEV
+# ==========================================================
+
+def _is_obsyp_work(
+    item
+):
+    text = _normalize_text(
+        item.get(
+            "description",
+            ""
+        )
+    )
+
+    return (
+        "obsyp" in text
+        and "potrub" in text
+        and "dodavka" not in text
+        and item.get(
+            "category"
+        ) != "material"
+    )
+
+
+def _is_obsyp_material(
+    item
+):
+    text = _normalize_text(
+        item.get(
+            "description",
+            ""
+        )
+    )
+
+    return (
+        "obsyp" in text
+        and any(
+            token in text
+            for token in [
+                "piesok",
+                "strkopiesok",
+                "kamenivo",
+            ]
+        )
+        and (
+            "dodavka" in text
+            or item.get(
+                "category"
+            ) == "material"
+        )
+    )
+
+
+def _is_zasyp_work(
+    item
+):
+    text = _normalize_text(
+        item.get(
+            "description",
+            ""
+        )
+    )
+
+    return (
+        "zasyp" in text
+        and "obsyp" not in text
+        and item.get(
+            "category"
+        ) != "material"
+    )
+
+
+def _append_item_warning(
+    item,
+    message
+):
+    warnings = item.setdefault(
+        "warnings",
+        []
+    )
+
+    if message not in warnings:
+
+        warnings.append(
+            message
+        )
+
+
+def _attach_suspicious_quantity_warnings(
+    items
+):
+    """
+    IBA upozorňuje.
+
+    Nikdy množstvo automaticky neopravuje.
+
+    Zachytí napr.:
+
+    obsyp potrubia = 138,61 m3
+
+    dodávka piesku na obsyp = 591,55 m3
+
+    zásyp = 591,55 m3
+
+    čo silno vyzerá ako
+    skopírované množstvo.
+    """
+
+    by_sheet = {}
+
+    for item in items:
+
+        by_sheet.setdefault(
+            item.get(
+                "sheet",
+                ""
+            ),
+            []
+        ).append(
+            item
+        )
+
+    for sheet_name, sheet_items in by_sheet.items():
+
+        obsyp_work = [
+            item
+            for item in sheet_items
+            if _is_obsyp_work(
+                item
+            )
+        ]
+
+        obsyp_material = [
+            item
+            for item in sheet_items
+            if _is_obsyp_material(
+                item
+            )
+        ]
+
+        zasyp_work = [
+            item
+            for item in sheet_items
+            if _is_zasyp_work(
+                item
+            )
+        ]
+
+        if (
+            not obsyp_work
+            or not obsyp_material
+        ):
+            continue
+
+        obsyp_work_total = sum(
+            float(
+                item.get(
+                    "quantity",
+                    0
+                )
+                or 0
+            )
+            for item in obsyp_work
+        )
+
+        obsyp_material_total = sum(
+            float(
+                item.get(
+                    "quantity",
+                    0
+                )
+                or 0
+            )
+            for item in obsyp_material
+        )
+
+        zasyp_total = sum(
+            float(
+                item.get(
+                    "quantity",
+                    0
+                )
+                or 0
+            )
+            for item in zasyp_work
+        )
+
+        if (
+            obsyp_work_total <= 0
+            or obsyp_material_total <= 0
+        ):
+            continue
+
+        ratio = (
+            obsyp_material_total
+            /
+            obsyp_work_total
+        )
+
+        # ==================================================
+        # VEĽKÝ ROZDIEL MEDZI OBSYPOM A MATERIÁLOM
+        # ==================================================
+
+        if (
+            ratio < 0.75
+            or ratio > 1.25
+        ):
+
+            message = (
+                f"PODOZRIVÉ MNOŽSTVO na hárku "
+                f"{sheet_name}: "
+                f"materiál na obsyp = "
+                f"{round(obsyp_material_total, 3)} m3, "
+                f"obsyp potrubia = "
+                f"{round(obsyp_work_total, 3)} m3. "
+                f"Skontrolovať CP; "
+                f"automaticky sa neopravuje."
+            )
+
+            for item in (
+                obsyp_work
+                + obsyp_material
+            ):
+
+                _append_item_warning(
+                    item,
+                    message
+                )
+
+        # ==================================================
+        # MATERIÁL NA OBSYP SA PODOZRIVO ROVNÁ ZÁSYPU
+        # ==================================================
+
+        if (
+            zasyp_total > 0
+            and abs(
+                obsyp_material_total
+                -
+                zasyp_total
+            )
+            <= max(
+                0.01,
+                abs(
+                    zasyp_total
+                ) * 0.005
+            )
+            and abs(
+                obsyp_material_total
+                -
+                obsyp_work_total
+            )
+            >
+            max(
+                0.01,
+                abs(
+                    obsyp_work_total
+                ) * 0.25
+            )
+        ):
+
+            message = (
+                f"MOŽNÉ KOPÍROVANIE MNOŽSTVA "
+                f"na hárku {sheet_name}: "
+                f"materiál na obsyp "
+                f"({round(obsyp_material_total, 3)} m3) "
+                f"sa zhoduje so zásypom "
+                f"({round(zasyp_total, 3)} m3), "
+                f"ale nie s obsypom "
+                f"({round(obsyp_work_total, 3)} m3)."
+            )
+
+            for item in obsyp_material:
+
+                _append_item_warning(
+                    item,
+                    message
+                )
 
 
 # ==========================================================
 # 2. TECHNICKÝ PODPIS POLOŽKY
 # ==========================================================
 
-def _remove_pricing_bands(text):
+def _remove_pricing_bands(
+    text
+):
     """
     Odstraňuje iba typické CENOVÉ PÁSMA,
     ktoré nemenia technický význam práce.
@@ -497,32 +1642,88 @@ def _remove_pricing_bands(text):
     - na vzdialenosť do 1000 m
     - za každých ďalších 1000 m
 
-    Neodstraňuje DN, hrúbku, triedu betónu,
-    materiál, SN, PN, rozmer výrobku atď.
+    Neodstraňuje:
+    - DN
+    - hrúbku
+    - triedu betónu
+    - materiál
+    - SN
+    - PN
     """
 
-    result = _normalize_text(
-        text
+    result = (
+        _normalize_text(
+            text
+        )
     )
 
     patterns = [
-        # objemové / plošné / hmotnostné pásma
-        r"\bnad\s+\d+(?:[.,]\d+)?\s+do\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|m|t|kg|ks)\b",
-        r"\bod\s+\d+(?:[.,]\d+)?\s+do\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|m|t|kg|ks)\b",
-        r"\bdo\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|t|kg|ks)\b",
-        r"\bnad\s+\d+(?:[.,]\d+)?\s*(?:m3|m2|t|kg|ks)\b",
 
-        # vzdialenostné cenové pásma
-        r"\bna vzdialenost do\s+\d+(?:[.,]\d+)?\s*m\b",
-        r"\bna vzdialenost nad\s+\d+(?:[.,]\d+)?\s*do\s+\d+(?:[.,]\d+)?\s*m\b",
-        r"\bza kazdych dalsich a zacatych\s+\d+(?:[.,]\d+)?\s*m\b",
+        # objemové pásma
 
-        # plocha pracovného pruhu ako cenový interval
-        r"\bplochy do\s+\d+(?:[.,]\d+)?\s*m2\b",
-        r"\bplochy nad\s+\d+(?:[.,]\d+)?\s*do\s+\d+(?:[.,]\d+)?\s*m2\b",
+        (
+            r"\bnad\s+\d+(?:[.,]\d+)?"
+            r"\s+do\s+\d+(?:[.,]\d+)?"
+            r"\s*(?:m3|m2|m|t|kg|ks)\b"
+        ),
+
+        (
+            r"\bod\s+\d+(?:[.,]\d+)?"
+            r"\s+do\s+\d+(?:[.,]\d+)?"
+            r"\s*(?:m3|m2|m|t|kg|ks)\b"
+        ),
+
+        (
+            r"\bdo\s+\d+(?:[.,]\d+)?"
+            r"\s*(?:m3|m2|t|kg|ks)\b"
+        ),
+
+        (
+            r"\bnad\s+\d+(?:[.,]\d+)?"
+            r"\s*(?:m3|m2|t|kg|ks)\b"
+        ),
+
+        # vzdialenosti
+
+        (
+            r"\bna vzdialenost do\s+"
+            r"\d+(?:[.,]\d+)?\s*m\b"
+        ),
+
+        (
+            r"\bna vzdialenost nad\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s+do\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s*m\b"
+        ),
+
+        (
+            r"\bza kazdych dalsich "
+            r"a zacatych\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s*m\b"
+        ),
+
+        # plocha
+
+        (
+            r"\bplochy do\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s*m2\b"
+        ),
+
+        (
+            r"\bplochy nad\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s+do\s+"
+            r"\d+(?:[.,]\d+)?"
+            r"\s*m2\b"
+        ),
     ]
 
     for pattern in patterns:
+
         result = re.sub(
             pattern,
             "",
@@ -534,72 +1735,121 @@ def _remove_pricing_bands(text):
         r"\s+",
         " ",
         result
-    ).strip(" ,;-")
+    ).strip(
+        " ,;-"
+    )
 
     return result
 
 
-def _extract_critical_parameters(description):
+def _extract_critical_parameters(
+    description
+):
     """
     Všeobecný technický podpis.
 
-    Zachováva parametre, ktoré typicky znamenajú,
+    Zachováva parametre,
+    ktoré typicky znamenajú,
     že položky sa NESMÚ zlúčiť.
     """
 
-    text = _normalize_text(
-        description
+    text = (
+        _normalize_text(
+            description
+        )
     )
 
     parameters = []
 
     regexes = [
+
         # DN
+
         (
             "dn",
             r"\bdn\s*([0-9]+)\b"
         ),
 
         # SN
+
         (
             "sn",
             r"\bsn\s*([0-9]+)\b"
         ),
 
         # PN
+
         (
             "pn",
-            r"\bpn\s*([0-9]+(?:[.,][0-9]+)?)\b"
+            (
+                r"\bpn\s*"
+                r"([0-9]+(?:[.,][0-9]+)?)\b"
+            )
         ),
 
-        # trieda betónu C 20/25
+        # trieda betónu
+
         (
             "beton",
-            r"\bc\s*([0-9]+)\s*/\s*([0-9]+)\b"
+            (
+                r"\bc\s*"
+                r"([0-9]+)"
+                r"\s*/\s*"
+                r"([0-9]+)\b"
+            )
         ),
 
         # hrúbka
+
         (
             "hr",
-            r"\bhr\.?\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)\b"
+            (
+                r"\bhr\.?\s*"
+                r"([0-9]+(?:[.,][0-9]+)?)"
+                r"\s*(mm|cm|m)\b"
+            )
         ),
 
         # priemer
+
         (
             "priemer",
-            r"\bpriemer(?:u)?\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?\b"
+            (
+                r"\bpriemer(?:u)?\s*"
+                r"([0-9]+(?:[.,][0-9]+)?)"
+                r"\s*(mm|cm|m)?\b"
+            )
         ),
 
-        # rozmery 150x150, 1500x1800x2300
+        # rozmery
+
         (
             "rozmer",
-            r"\b([0-9]+(?:[.,][0-9]+)?x[0-9]+(?:[.,][0-9]+)?(?:x[0-9]+(?:[.,][0-9]+)?)?)\s*(mm|cm|m)?\b"
+            (
+                r"\b("
+                r"[0-9]+(?:[.,][0-9]+)?"
+                r"x"
+                r"[0-9]+(?:[.,][0-9]+)?"
+                r"(?:x"
+                r"[0-9]+(?:[.,][0-9]+)?"
+                r")?"
+                r")"
+                r"\s*(mm|cm|m)?\b"
+            )
         ),
 
-        # pevnostné / triedové označenia bežné pri materiáloch
+        # expozícia betónu
+
         (
             "xc",
-            r"\b(xc[0-9]+|xf[0-9]+|xd[0-9]+|xa[0-9]+)\b"
+            (
+                r"\b("
+                r"xc[0-9]+"
+                r"|xf[0-9]+"
+                r"|xd[0-9]+"
+                r"|xa[0-9]+"
+                r")\b"
+            )
         ),
     ]
 
@@ -610,9 +1860,11 @@ def _extract_critical_parameters(description):
             text,
             flags=re.IGNORECASE
         ):
+
             value = "|".join(
                 part
-                for part in match.groups()
+                for part
+                in match.groups()
                 if part is not None
             )
 
@@ -620,9 +1872,6 @@ def _extract_critical_parameters(description):
                 f"{name}:{value}"
             )
 
-    # Materiálové a výrobkové tokeny.
-    # Toto nie je zoznam stavieb; iba technické slová,
-    # ktoré nesmú zmiznúť pri porovnaní.
     material_tokens = [
         "pvc-u",
         "pvc",
@@ -656,6 +1905,7 @@ def _extract_critical_parameters(description):
     for token in material_tokens:
 
         if token in text:
+
             parameters.append(
                 f"mat:{token}"
             )
@@ -669,26 +1919,23 @@ def _extract_critical_parameters(description):
     )
 
 
-def _remove_ksp_irrelevant_classifiers(text):
+def _remove_ksp_irrelevant_classifiers(
+    text
+):
     """
-    Odstráni iba klasifikátory, ktoré v rozpočte často
-    menia cenu, ale spravidla nemenia KSP kontrolu.
+    Odstráni klasifikátory,
+    ktoré menia cenu,
+    ale obvykle nemenia KSP kontrolu.
 
-    Je to všeobecné pravidlo pre zemné práce:
-    pri výkope/hĺbení ignorujeme oceňovaciu triedu horniny,
-    ale zachovávame typ práce, šírku, rozmery a MJ.
-
-    Príklady, ktoré sa zjednotia:
-    - horn.3
-    - hor 4
-    - hornina tr. 3
-    - v hornine 4
-
-    Toto sa aplikuje LEN na zemné práce typu výkop/hĺbenie,
-    nie na všetky stavebné položky.
+    Aktuálne:
+    trieda horniny pri výkope.
     """
 
-    result = _normalize_text(text)
+    result = (
+        _normalize_text(
+            text
+        )
+    )
 
     is_earth_excavation = any(
         token in result
@@ -709,13 +1956,34 @@ def _remove_ksp_irrelevant_classifiers(text):
     patterns = [
         r"\bhorn\.?\s*\d+\b",
         r"\bhor\s*\d+\b",
-        r"\bhornina\s*(?:tr\.?|triedy)?\s*\d+\b",
-        r"\bhornine\s*(?:tr\.?|triedy)?\s*\d+\b",
-        r"\bz\s*horniny\s*(?:tr\.?|triedy)?\s*\d+\b",
-        r"\bv\s*hornine\s*(?:tr\.?|triedy)?\s*\d+\b",
+
+        (
+            r"\bhornina\s*"
+            r"(?:tr\.?|triedy)?"
+            r"\s*\d+\b"
+        ),
+
+        (
+            r"\bhornine\s*"
+            r"(?:tr\.?|triedy)?"
+            r"\s*\d+\b"
+        ),
+
+        (
+            r"\bz\s*horniny\s*"
+            r"(?:tr\.?|triedy)?"
+            r"\s*\d+\b"
+        ),
+
+        (
+            r"\bv\s*hornine\s*"
+            r"(?:tr\.?|triedy)?"
+            r"\s*\d+\b"
+        ),
     ]
 
     for pattern in patterns:
+
         result = re.sub(
             pattern,
             "",
@@ -727,38 +1995,33 @@ def _remove_ksp_irrelevant_classifiers(text):
         r"\s+",
         " ",
         result
-    ).strip(" ,;-")
+    ).strip(
+        " ,;-"
+    )
 
     return result
 
 
-def _description_signature(description):
+def _description_signature(
+    description
+):
     """
-    Vráti všeobecný technický podpis položky pre KSP.
-
-    Odstraňuje:
-    - cenové pásma,
-    - pri zemných prácach oceňovaciu triedu horniny.
-
-    Zachováva:
-    - typ práce,
-    - šírku/rozmer,
-    - DN, SN, PN,
-    - triedu betónu,
-    - hrúbku,
-    - materiál,
-    - ostatné technické parametre.
+    Vráti všeobecný technický podpis
+    položky pre KSP.
     """
 
-    text = _remove_pricing_bands(
-        description
+    text = (
+        _remove_pricing_bands(
+            description
+        )
     )
 
-    text = _remove_ksp_irrelevant_classifiers(
-        text
+    text = (
+        _remove_ksp_irrelevant_classifiers(
+            text
+        )
     )
 
-    # drobné typografické rozdiely
     text = re.sub(
         r"[(),.;:]",
         " ",
@@ -780,8 +2043,12 @@ def _description_similarity(
 ):
     return SequenceMatcher(
         None,
-        _description_signature(first),
-        _description_signature(second)
+        _description_signature(
+            first
+        ),
+        _description_signature(
+            second
+        )
     ).ratio()
 
 
@@ -790,41 +2057,97 @@ def _can_group_items(
     second
 ):
     """
-    Konzervatívne všeobecné rozhodovanie.
+    Konzervatívne zoskupovanie.
 
     Položky spojíme iba keď:
-    - majú rovnakú MJ,
-    - nemajú konfliktné technické parametre,
-    - a text je rovnaký alebo veľmi podobný.
 
-    Pri neistote ich NEZLÚČIME.
+    - majú rovnakú MJ,
+    - majú rovnakú kategóriu,
+    - nemajú konfliktné technické parametre,
+    - názov je rovnaký alebo veľmi podobný.
+
+    DÔLEŽITÉ:
+
+    práca != materiál
+
+    montáž != dodávka
+
+    skúška != realizačná položka
     """
+
+    # ======================================================
+    # MJ
+    # ======================================================
 
     if (
         _normalize_unit(
-            first["unit"]
+            first[
+                "unit"
+            ]
         )
         !=
         _normalize_unit(
-            second["unit"]
+            second[
+                "unit"
+            ]
         )
     ):
         return False
 
+    # ======================================================
+    # KATEGÓRIA
+    # ======================================================
+
+    first_category = (
+        first.get(
+            "category"
+        )
+        or
+        _infer_budget_category(
+            first[
+                "description"
+            ]
+        )
+    )
+
+    second_category = (
+        second.get(
+            "category"
+        )
+        or
+        _infer_budget_category(
+            second[
+                "description"
+            ]
+        )
+    )
+
+    if (
+        first_category
+        != second_category
+    ):
+        return False
+
+    # ======================================================
+    # TECHNICKÉ PARAMETRE
+    # ======================================================
+
     first_params = (
         _extract_critical_parameters(
-            first["description"]
+            first[
+                "description"
+            ]
         )
     )
 
     second_params = (
         _extract_critical_parameters(
-            second["description"]
+            second[
+                "description"
+            ]
         )
     )
 
-    # Ak majú oba technické parametre,
-    # musia byť zhodné.
     if (
         first_params
         and second_params
@@ -832,55 +2155,81 @@ def _can_group_items(
     ):
         return False
 
+    # ======================================================
+    # TEXT
+    # ======================================================
+
     first_signature = (
         _description_signature(
-            first["description"]
+            first[
+                "description"
+            ]
         )
     )
 
     second_signature = (
         _description_signature(
-            second["description"]
+            second[
+                "description"
+            ]
         )
     )
 
-    # Najbezpečnejší prípad.
     if (
         first_signature
-        == second_signature
+        ==
+        second_signature
     ):
         return True
 
     similarity = (
         _description_similarity(
-            first["description"],
-            second["description"]
+            first[
+                "description"
+            ],
+            second[
+                "description"
+            ]
         )
     )
 
+    # ======================================================
+    # KÓD
+    # ======================================================
+
     first_code = (
         _normalize_code(
-            first["code"]
+            first.get(
+                "code",
+                ""
+            )
         )
     )
 
     second_code = (
         _normalize_code(
-            second["code"]
+            second.get(
+                "code",
+                ""
+            )
         )
     )
 
-    # Rovnaký normalizovaný kód + veľmi podobný popis.
-    # To zachytí .S / .s / bez suffixu, ale neprebije
-    # rozdiel C12/15 vs C20/25, lebo ten blokuje parameter.
+    # Rovnaký kód
+    # + podobný text.
+
     if (
         first_code
-        and first_code == second_code
+        and first_code
+        ==
+        second_code
         and similarity >= 0.78
     ):
         return True
 
-    # Bez rovnakého kódu iba pri takmer identickom texte.
+    # Bez rovnakého kódu
+    # iba takmer identický text.
+
     if similarity >= 0.94:
         return True
 
@@ -914,13 +2263,18 @@ def _make_generic_group_key(
         r"[^a-z0-9]+",
         "_",
         signature
-    ).strip("_")
+    ).strip(
+        "_"
+    )
 
     if len(
         safe_signature
     ) > 90:
+
         safe_signature = (
-            safe_signature[:90]
+            safe_signature[
+                :90
+            ]
         )
 
     param_text = "_".join(
@@ -928,11 +2282,14 @@ def _make_generic_group_key(
             r"[^a-z0-9]+",
             "_",
             param
-        ).strip("_")
+        ).strip(
+            "_"
+        )
         for param in params
     )
 
     if param_text:
+
         return (
             safe_signature
             + "__"
@@ -948,17 +2305,27 @@ def _convert_quantity_for_ksp(
     quantity
 ):
     """
-    Všeobecná, konzervatívna odvodená konverzia.
+    Konzervatívny odvodený prepočet.
 
-    Zatiaľ prepočítava iba betónovú vrstvu:
-    m2 × explicitná hrúbka = m3.
+    Zatiaľ iba:
 
-    Ak podmienky nie sú jednoznačné,
-    ponechá pôvodné množstvo a MJ.
+    BETÓN:
+    m2 × explicitná hrúbka = m3
+
+    Napr.:
+
+    C 20/25 hr. 200 mm
+    2525,26 m2
+
+    -> 505,052 m3
+
+    Asfalt sa NEPREPOČÍTAVA.
     """
 
-    normalized = _normalize_text(
-        description
+    normalized = (
+        _normalize_text(
+            description
+        )
     )
 
     normalized_unit = (
@@ -968,15 +2335,16 @@ def _convert_quantity_for_ksp(
     )
 
     if normalized_unit != "m2":
+
         return (
             quantity,
             normalized_unit
         )
 
-    # Prevod m2 -> m3 robíme iba pri cementovom betóne,
-    # keď je v popise výslovne uvedená trieda Cxx/yy.
-    # Tým sa napr. asfaltový betón AC 11 O NESMIE
-    # omylom prepočítať na objem.
+    # ======================================================
+    # MUSÍ ÍSŤ O CEMENTOVÝ BETÓN Cxx/yy
+    # ======================================================
+
     concrete_class = re.search(
         r"\bc\s*[0-9]+\s*/\s*[0-9]+\b",
         normalized,
@@ -984,24 +2352,36 @@ def _convert_quantity_for_ksp(
     )
 
     if not concrete_class:
+
         return (
             quantity,
             normalized_unit
         )
 
+    # ======================================================
+    # MUSÍ BYŤ UVEDENÁ HRÚBKA
+    # ======================================================
+
     match = re.search(
-        r"\bhr\.?\s*([0-9]+(?:[.,][0-9]+)?)\s*mm\b",
+        (
+            r"\bhr\.?\s*"
+            r"([0-9]+(?:[.,][0-9]+)?)"
+            r"\s*mm\b"
+        ),
         normalized
     )
 
     if not match:
+
         return (
             quantity,
             normalized_unit
         )
 
     thickness_mm = float(
-        match.group(1).replace(
+        match.group(
+            1
+        ).replace(
             ",",
             "."
         )
@@ -1009,24 +2389,34 @@ def _convert_quantity_for_ksp(
 
     return (
         quantity
-        * thickness_mm
-        / 1000.0,
+        *
+        thickness_mm
+        /
+        1000.0,
+
         "m3"
     )
 
 
-def aggregate_budget_items_python(items):
+def aggregate_budget_items_python(
+    items
+):
     """
     Všeobecné zoskupovanie bez AI.
 
     Algoritmus:
+
     1. ide položku po položke,
-    2. hľadá existujúcu technicky zhodnú skupinu,
-    3. ak si nie je istý, vytvorí novú skupinu,
+    2. hľadá technicky zhodnú skupinu,
+    3. pri neistote vytvorí novú skupinu,
     4. Python sčíta iba potvrdené zhody.
     """
 
     groups = []
+
+    # ======================================================
+    # VYTVORENIE SKUPÍN
+    # ======================================================
 
     for item in items:
 
@@ -1036,9 +2426,15 @@ def aggregate_budget_items_python(items):
 
             if _can_group_items(
                 item,
-                group["representative"]
+                group[
+                    "representative"
+                ]
             ):
-                matching_group = group
+
+                matching_group = (
+                    group
+                )
+
                 break
 
         if matching_group is None:
@@ -1046,6 +2442,7 @@ def aggregate_budget_items_python(items):
             matching_group = {
                 "representative":
                     item,
+
                 "members":
                     []
             }
@@ -1060,6 +2457,10 @@ def aggregate_budget_items_python(items):
             item
         )
 
+    # ======================================================
+    # SÚČTY
+    # ======================================================
+
     result = []
 
     for group in groups:
@@ -1071,14 +2472,21 @@ def aggregate_budget_items_python(items):
         )
 
         total_quantity = 0.0
+
         result_unit = None
+
         source_rows = []
+
+        warnings = []
 
         for member in group[
             "members"
         ]:
 
-            converted_quantity, converted_unit = (
+            (
+                converted_quantity,
+                converted_unit
+            ) = (
                 _convert_quantity_for_ksp(
                     member[
                         "description"
@@ -1092,17 +2500,22 @@ def aggregate_budget_items_python(items):
                 )
             )
 
-            # Ak by sa v skupine po odvodení objavili
-            # rozdielne MJ, radšej pôvodné množstvo neprepisujeme.
             if result_unit is None:
+
                 result_unit = (
                     converted_unit
                 )
 
+            # Ak sa po konverzii
+            # objavia rozdielne MJ,
+            # radšej použijeme pôvodnú MJ.
+
             if (
                 converted_unit
-                != result_unit
+                !=
+                result_unit
             ):
+
                 converted_quantity = (
                     member[
                         "quantity"
@@ -1127,28 +2540,57 @@ def aggregate_budget_items_python(items):
                         member[
                             "sheet"
                         ],
+
                     "row_number":
                         member[
                             "row_number"
                         ],
+
                     "code":
-                        member[
-                            "code"
-                        ],
+                        member.get(
+                            "code",
+                            ""
+                        ),
+
                     "description":
                         member[
                             "description"
                         ],
+
                     "original_quantity":
                         member[
                             "quantity"
                         ],
+
                     "original_unit":
                         member[
                             "unit"
-                        ]
+                        ],
+
+                    "category":
+                        member.get(
+                            "category",
+                            ""
+                        ),
+
+                    "sheet_project_status":
+                        member.get(
+                            "sheet_project_status",
+                            ""
+                        )
                 }
             )
+
+            for warning in member.get(
+                "warnings",
+                []
+            ):
+
+                if warning not in warnings:
+
+                    warnings.append(
+                        warning
+                    )
 
         params = (
             _extract_critical_parameters(
@@ -1164,36 +2606,59 @@ def aggregate_budget_items_python(items):
                     _make_generic_group_key(
                         representative
                     ),
+
                 "item_name":
                     representative[
                         "description"
                     ],
+
                 "category":
-                    "stavebna_polozka",
+                    representative.get(
+                        "category",
+                        _infer_budget_category(
+                            representative[
+                                "description"
+                            ]
+                        )
+                    ),
+
                 "unit":
                     result_unit
-                    or _normalize_unit(
+                    or
+                    _normalize_unit(
                         representative[
                             "unit"
                         ]
                     ),
+
                 "quantity":
                     round(
                         total_quantity,
                         6
                     ),
+
                 "dimension":
                     "; ".join(
                         params
                     ),
+
                 "material":
                     "",
+
                 "source_rows":
                     source_rows,
+
                 "grouping_method":
-                    "python_generic"
+                    "python_generic",
+
+                "warnings":
+                    warnings
             }
         )
+
+    # ======================================================
+    # PORADIE PODĽA PRVÉHO VÝSKYTU
+    # ======================================================
 
     result.sort(
         key=lambda item: (
@@ -1221,34 +2686,189 @@ def aggregate_budget_items_python(items):
     return result
 
 
-def process_budget_python(file_bytes):
+# ==========================================================
+# DIAGNOSTIKA ROZPOČTU
+# ==========================================================
+
+def _build_budget_diagnostics(
+    file_bytes,
+    items,
+    project_hint=None
+):
+    sheet_info = (
+        inspect_budget_sheets_python(
+            file_bytes,
+            project_hint=project_hint
+        )
+    )
+
+    warnings = []
+
+    for item in items:
+
+        for warning in item.get(
+            "warnings",
+            []
+        ):
+
+            if warning not in warnings:
+
+                warnings.append(
+                    warning
+                )
+
+    skipped_foreign = [
+        row
+        for row
+        in sheet_info[
+            "sheets"
+        ]
+        if row.get(
+            "status"
+        )
+        ==
+        "foreign"
+    ]
+
+    return {
+        "primary_project_tokens":
+            sheet_info.get(
+                "primary_project_tokens",
+                []
+            ),
+
+        "skipped_foreign_sheets":
+            skipped_foreign,
+
+        "warnings":
+            warnings,
+
+        "item_count":
+            len(
+                items
+            )
+    }
+
+
+# ==========================================================
+# HLAVNÉ SPRACOVANIE ROZPOČTU
+# ==========================================================
+
+def process_budget_python(
+    file_bytes,
+    project_hint=None
+):
     """
     Verejná funkcia pre appku.
 
-    - všetky detailné hárky
     - bez AI
-    - všeobecné stavebné položky
     - konzervatívne zoskupovanie
     - Python sčítanie
+
+    NOVÉ:
+
+    - cudzie projektové hárky sa pri
+      spoľahlivej identifikácii vynechajú,
+
+    - hárky bez názvu stavby ostávajú,
+
+    - práca a materiál sa nezlučujú,
+
+    - podozrivé množstvá sa iba označia,
+      nikdy sa neopravujú automaticky.
+
+    project_hint je voliteľný.
+
+    Ak appka pozná názov stavby,
+    je najlepšie ho poslať sem.
     """
 
-    items = extract_budget_items_python(
-        file_bytes
+    items = (
+        extract_budget_items_python(
+            file_bytes,
+            project_hint=project_hint
+        )
     )
 
-    return aggregate_budget_items_python(
-        items
+    return (
+        aggregate_budget_items_python(
+            items
+        )
     )
 
+
+def process_budget_python_with_diagnostics(
+    file_bytes,
+    project_hint=None
+):
+    """
+    Diagnostická verzia.
+
+    Vracia:
+
+    {
+        "rows": [...],
+
+        "diagnostics": {
+            "primary_project_tokens": [...],
+            "skipped_foreign_sheets": [...],
+            "warnings": [...],
+            "item_count": ...
+        }
+    }
+
+    Túto funkciu môžeme neskôr použiť
+    v Streamlit UI na zobrazenie upozornení.
+    """
+
+    items = (
+        extract_budget_items_python(
+            file_bytes,
+            project_hint=project_hint
+        )
+    )
+
+    rows = (
+        aggregate_budget_items_python(
+            items
+        )
+    )
+
+    diagnostics = (
+        _build_budget_diagnostics(
+            file_bytes,
+            items,
+            project_hint=project_hint
+        )
+    )
+
+    return {
+        "rows":
+            rows,
+
+        "diagnostics":
+            diagnostics
+    }
+
+
+# ==========================================================
+# SPOJENIE VIAC ROZPOČTOV
+# ==========================================================
 
 def merge_aggregated_budget_rows(
     aggregated_lists
 ):
     """
-    Spojí výsledky z viacerých rozpočtových Excelov.
+    Spojí výsledky z viacerých
+    rozpočtových Excelov.
 
-    Znova konzervatívne:
-    rovnaký group_key + rovnaká MJ.
+    Konzervatívne:
+
+    rovnaký group_key
+    +
+    rovnaká MJ
+    +
+    rovnaká kategória
     """
 
     grouped = {}
@@ -1264,58 +2884,83 @@ def merge_aggregated_budget_rows(
                         ""
                     )
                 ),
+
                 _normalize_unit(
                     item.get(
                         "unit",
+                        ""
+                    )
+                ),
+
+                str(
+                    item.get(
+                        "category",
                         ""
                     )
                 )
             )
 
             if key not in grouped:
-                grouped[key] = {
+
+                grouped[
+                    key
+                ] = {
+
                     "group_key":
                         item.get(
                             "group_key",
                             ""
                         ),
+
                     "item_name":
                         item.get(
                             "item_name",
                             ""
                         ),
+
                     "category":
                         item.get(
                             "category",
                             ""
                         ),
+
                     "unit":
                         item.get(
                             "unit",
                             ""
                         ),
+
                     "quantity":
                         0.0,
+
                     "dimension":
                         item.get(
                             "dimension",
                             ""
                         ),
+
                     "material":
                         item.get(
                             "material",
                             ""
                         ),
+
                     "source_rows":
                         [],
+
                     "grouping_method":
                         item.get(
                             "grouping_method",
                             "python_generic"
-                        )
+                        ),
+
+                    "warnings":
+                        []
                 }
 
-            grouped[key][
+            grouped[
+                key
+            ][
                 "quantity"
             ] += float(
                 item.get(
@@ -1325,7 +2970,9 @@ def merge_aggregated_budget_rows(
                 or 0
             )
 
-            grouped[key][
+            grouped[
+                key
+            ][
                 "source_rows"
             ].extend(
                 item.get(
@@ -1334,13 +2981,41 @@ def merge_aggregated_budget_rows(
                 )
             )
 
+            for warning in item.get(
+                "warnings",
+                []
+            ):
+
+                if (
+                    warning
+                    not in
+                    grouped[
+                        key
+                    ][
+                        "warnings"
+                    ]
+                ):
+
+                    grouped[
+                        key
+                    ][
+                        "warnings"
+                    ].append(
+                        warning
+                    )
+
     result = list(
         grouped.values()
     )
 
     for item in result:
-        item["quantity"] = round(
-            item["quantity"],
+
+        item[
+            "quantity"
+        ] = round(
+            item[
+                "quantity"
+            ],
             6
         )
 
@@ -1351,10 +3026,14 @@ def merge_aggregated_budget_rows(
 # SPÄTNÁ KOMPATIBILITA
 # ==========================================================
 
-def aggregate_budget_rows(classified_rows):
+def aggregate_budget_rows(
+    classified_rows
+):
     """
     Staršia funkcia ostáva iba preto,
-    aby prípadný starší import appku nezrútil.
+    aby prípadný starší import
+    appku nezrútil.
+
     Nový rozpočet ju už nepotrebuje.
     """
 
@@ -1371,50 +3050,86 @@ def aggregate_budget_rows(classified_rows):
 # HLAVNÝ DISPEČER
 # ==========================================================
 
-def extract_text_from_file(arg1, arg2):
+def extract_text_from_file(
+    arg1,
+    arg2
+):
     """
     Podporuje obe poradia:
-    extract_text_from_file(file_bytes, file_name)
-    extract_text_from_file(file_name, file_bytes)
+
+    extract_text_from_file(
+        file_bytes,
+        file_name
+    )
+
+    extract_text_from_file(
+        file_name,
+        file_bytes
+    )
     """
 
     if isinstance(
         arg1,
         (bytes, bytearray)
     ):
-        file_bytes = arg1
-        file_name = arg2
+
+        file_bytes = (
+            arg1
+        )
+
+        file_name = (
+            arg2
+        )
+
     else:
-        file_name = arg1
-        file_bytes = arg2
+
+        file_name = (
+            arg1
+        )
+
+        file_bytes = (
+            arg2
+        )
 
     extension = (
         str(
             file_name
         )
         .lower()
-        .split(".")[-1]
+        .split(
+            "."
+        )[-1]
     )
 
     if extension == "pdf":
-        return extract_text_from_pdf(
-            file_bytes
+
+        return (
+            extract_text_from_pdf(
+                file_bytes
+            )
         )
 
     if extension == "docx":
-        return extract_text_from_docx(
-            file_bytes
+
+        return (
+            extract_text_from_docx(
+                file_bytes
+            )
         )
 
     if extension in [
         "xlsx",
         "xls"
     ]:
-        return extract_text_from_excel(
-            file_bytes
+
+        return (
+            extract_text_from_excel(
+                file_bytes
+            )
         )
 
     if extension == "doc":
+
         raise ValueError(
             "Starý formát .doc nie je možné "
             "spoľahlivo čítať cez python-docx. "
