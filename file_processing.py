@@ -387,9 +387,6 @@ def _extract_project_labels_from_sheet(
                         )
                         break
 
-    # odstránenie duplicít,
-    # zachovanie pôvodného poradia
-
     unique = []
     seen = set()
 
@@ -434,10 +431,6 @@ def _detect_primary_project_tokens(
     nič automaticky nevyradíme.
     """
 
-    # ======================================================
-    # 1. NÁZOV STAVBY DODANÝ APPKOU
-    # ======================================================
-
     if project_hint:
 
         hint_tokens = (
@@ -448,10 +441,6 @@ def _detect_primary_project_tokens(
 
         if hint_tokens:
             return hint_tokens
-
-    # ======================================================
-    # 2. AUTOMATICKÉ URČENIE Z EXCELU
-    # ======================================================
 
     counter = Counter()
 
@@ -503,13 +492,8 @@ def _detect_primary_project_tokens(
         else 0
     )
 
-    # Musí byť aspoň na dvoch hárkoch.
-
     if top_count < 2:
         return set()
-
-    # Ak je remíza,
-    # nevieme bezpečne určiť projekt.
 
     if top_count == second_count:
         return set()
@@ -625,10 +609,6 @@ def inspect_budget_sheets_python(
                 sheet_name
             )
         )
-
-        # ----------------------------------------------
-        # Rekapitulácie
-        # ----------------------------------------------
 
         if "rekapitul" in normalized_sheet_name:
 
@@ -919,10 +899,6 @@ def _infer_budget_category(
         )
     )
 
-    # ======================================================
-    # SKÚŠKY / MERANIA
-    # ======================================================
-
     if any(
         token in text
         for token in [
@@ -938,10 +914,6 @@ def _infer_budget_category(
     ):
         return "skuska"
 
-    # ======================================================
-    # MONTÁŽ
-    # ======================================================
-
     if any(
         token in text
         for token in [
@@ -952,10 +924,6 @@ def _infer_budget_category(
         ]
     ):
         return "montaz"
-
-    # ======================================================
-    # MATERIÁL
-    # ======================================================
 
     if any(
         token in text
@@ -977,9 +945,6 @@ def _infer_budget_category(
             "vystuz",
         ]
     ):
-
-        # Niektoré názvy obsahujú materiál,
-        # ale v skutočnosti ide o prácu.
 
         work_tokens = [
             "obsyp",
@@ -1018,18 +983,13 @@ def extract_budget_items_python(
 
     Kód | Popis | MJ | Množstvo
 
-    NOVÉ:
+    Hárky bez rozpoznateľného názvu stavby
+    sa NEVYHADZUJÚ.
 
-    - ak sa dá spoľahlivo určiť hlavný projekt,
-      explicitne cudzie hárky sa preskočia,
+    Práca a materiál sa rozlišujú.
 
-    - hárky bez rozpoznateľného názvu stavby
-      sa NEVYHADZUJÚ,
-
-    - práca a materiál sa rozlišujú,
-
-    - kód položky môže byť pri staršom
-      rozpočte prázdny.
+    Kód položky môže byť pri staršom
+    rozpočte prázdny.
 
     Rekapitulácie sa preskočia.
 
@@ -1118,9 +1078,9 @@ def extract_budget_items_python(
             )
         )
 
-
-
-        # Unknown hárky bežne ponechávame.
+        # POZOR:
+        # foreign už automaticky NEVYHADZUJEME.
+        # Potrebujeme načítať všetky detailné hárky.
 
         if (
             project_status == "unknown"
@@ -1245,10 +1205,6 @@ def extract_budget_items_python(
                 unit
             ).strip()
 
-            # ----------------------------------------------
-            # Staršie rozpočty môžu mať prázdny kód.
-            # ----------------------------------------------
-
             if pd.isna(
                 code
             ):
@@ -1264,10 +1220,6 @@ def extract_budget_items_python(
                 or not unit
             ):
                 continue
-
-            # ----------------------------------------------
-            # Ochrana pred medzisúčtami
-            # ----------------------------------------------
 
             normalized_description = (
                 _normalize_text(
@@ -1330,27 +1282,39 @@ def extract_budget_items_python(
                 }
             )
 
-# ======================================================
-# KONTROLA PODOZRIVÝCH MNOŽSTIEV
-# ======================================================
+    # ======================================================
+    # KONTROLA PODOZRIVÝCH MNOŽSTIEV
+    # ======================================================
 
-_attach_suspicious_quantity_warnings(
-    items
-)
+    _attach_suspicious_quantity_warnings(
+        items
+    )
 
-for item in items:
-    if _normalize_code(item.get("code", "")) == "151101102":
-        print(
-            "DEBUG PAZENIE:",
-            item.get("sheet"),
-            item.get("row_number"),
-            item.get("code"),
-            item.get("description"),
-            item.get("quantity"),
-            item.get("unit")
-        )
+    # ======================================================
+    # DOČASNÁ DIAGNOSTIKA PAŽENIA
+    # ======================================================
 
-return items
+    for item in items:
+        if (
+            _normalize_code(
+                item.get(
+                    "code",
+                    ""
+                )
+            )
+            == "151101102"
+        ):
+            print(
+                "DEBUG PAZENIE:",
+                item.get("sheet"),
+                item.get("row_number"),
+                item.get("code"),
+                item.get("description"),
+                item.get("quantity"),
+                item.get("unit")
+            )
+
+    return items
 
 
 # ==========================================================
@@ -1448,17 +1412,6 @@ def _attach_suspicious_quantity_warnings(
     IBA upozorňuje.
 
     Nikdy množstvo automaticky neopravuje.
-
-    Zachytí napr.:
-
-    obsyp potrubia = 138,61 m3
-
-    dodávka piesku na obsyp = 591,55 m3
-
-    zásyp = 591,55 m3
-
-    čo silno vyzerá ako
-    skopírované množstvo.
     """
 
     by_sheet = {}
@@ -1552,10 +1505,6 @@ def _attach_suspicious_quantity_warnings(
             obsyp_work_total
         )
 
-        # ==================================================
-        # VEĽKÝ ROZDIEL MEDZI OBSYPOM A MATERIÁLOM
-        # ==================================================
-
         if (
             ratio < 0.75
             or ratio > 1.25
@@ -1581,10 +1530,6 @@ def _attach_suspicious_quantity_warnings(
                     item,
                     message
                 )
-
-        # ==================================================
-        # MATERIÁL NA OBSYP SA PODOZRIVO ROVNÁ ZÁSYPU
-        # ==================================================
 
         if (
             zasyp_total > 0
@@ -1667,8 +1612,6 @@ def _remove_pricing_bands(
 
     patterns = [
 
-        # objemové pásma
-
         (
             r"\bnad\s+\d+(?:[.,]\d+)?"
             r"\s+do\s+\d+(?:[.,]\d+)?"
@@ -1691,8 +1634,6 @@ def _remove_pricing_bands(
             r"\s*(?:m3|m2|t|kg|ks)\b"
         ),
 
-        # vzdialenosti
-
         (
             r"\bna vzdialenost do\s+"
             r"\d+(?:[.,]\d+)?\s*m\b"
@@ -1712,8 +1653,6 @@ def _remove_pricing_bands(
             r"\d+(?:[.,]\d+)?"
             r"\s*m\b"
         ),
-
-        # plocha
 
         (
             r"\bplochy do\s+"
@@ -1771,21 +1710,15 @@ def _extract_critical_parameters(
 
     regexes = [
 
-        # DN
-
         (
             "dn",
             r"\bdn\s*([0-9]+)\b"
         ),
 
-        # SN
-
         (
             "sn",
             r"\bsn\s*([0-9]+)\b"
         ),
-
-        # PN
 
         (
             "pn",
@@ -1794,8 +1727,6 @@ def _extract_critical_parameters(
                 r"([0-9]+(?:[.,][0-9]+)?)\b"
             )
         ),
-
-        # trieda betónu
 
         (
             "beton",
@@ -1807,8 +1738,6 @@ def _extract_critical_parameters(
             )
         ),
 
-        # hrúbka
-
         (
             "hr",
             (
@@ -1818,8 +1747,6 @@ def _extract_critical_parameters(
             )
         ),
 
-        # priemer
-
         (
             "priemer",
             (
@@ -1828,8 +1755,6 @@ def _extract_critical_parameters(
                 r"\s*(mm|cm|m)?\b"
             )
         ),
-
-        # rozmery
 
         (
             "rozmer",
@@ -1845,8 +1770,6 @@ def _extract_critical_parameters(
                 r"\s*(mm|cm|m)?\b"
             )
         ),
-
-        # expozícia betónu
 
         (
             "xc",
@@ -1871,8 +1794,7 @@ def _extract_critical_parameters(
 
             value = "|".join(
                 part
-                for part
-                in match.groups()
+                for part in match.groups()
                 if part is not None
             )
 
@@ -2083,10 +2005,6 @@ def _can_group_items(
     skúška != realizačná položka
     """
 
-    # ======================================================
-    # MJ
-    # ======================================================
-
     if (
         _normalize_unit(
             first[
@@ -2101,10 +2019,6 @@ def _can_group_items(
         )
     ):
         return False
-
-    # ======================================================
-    # KATEGÓRIA
-    # ======================================================
 
     first_category = (
         first.get(
@@ -2136,10 +2050,6 @@ def _can_group_items(
     ):
         return False
 
-    # ======================================================
-    # TECHNICKÉ PARAMETRE
-    # ======================================================
-
     first_params = (
         _extract_critical_parameters(
             first[
@@ -2162,10 +2072,6 @@ def _can_group_items(
         and first_params != second_params
     ):
         return False
-
-    # ======================================================
-    # TEXT
-    # ======================================================
 
     first_signature = (
         _description_signature(
@@ -2201,10 +2107,6 @@ def _can_group_items(
         )
     )
 
-    # ======================================================
-    # KÓD
-    # ======================================================
-
     first_code = (
         _normalize_code(
             first.get(
@@ -2223,9 +2125,6 @@ def _can_group_items(
         )
     )
 
-    # Rovnaký kód
-    # + podobný text.
-
     if (
         first_code
         and first_code
@@ -2234,9 +2133,6 @@ def _can_group_items(
         and similarity >= 0.78
     ):
         return True
-
-    # Bez rovnakého kódu
-    # iba takmer identický text.
 
     if similarity >= 0.94:
         return True
@@ -2320,13 +2216,6 @@ def _convert_quantity_for_ksp(
     BETÓN:
     m2 × explicitná hrúbka = m3
 
-    Napr.:
-
-    C 20/25 hr. 200 mm
-    2525,26 m2
-
-    -> 505,052 m3
-
     Asfalt sa NEPREPOČÍTAVA.
     """
 
@@ -2349,10 +2238,6 @@ def _convert_quantity_for_ksp(
             normalized_unit
         )
 
-    # ======================================================
-    # MUSÍ ÍSŤ O CEMENTOVÝ BETÓN Cxx/yy
-    # ======================================================
-
     concrete_class = re.search(
         r"\bc\s*[0-9]+\s*/\s*[0-9]+\b",
         normalized,
@@ -2365,10 +2250,6 @@ def _convert_quantity_for_ksp(
             quantity,
             normalized_unit
         )
-
-    # ======================================================
-    # MUSÍ BYŤ UVEDENÁ HRÚBKA
-    # ======================================================
 
     match = re.search(
         (
@@ -2422,10 +2303,6 @@ def aggregate_budget_items_python(
 
     groups = []
 
-    # ======================================================
-    # VYTVORENIE SKUPÍN
-    # ======================================================
-
     for item in items:
 
         matching_group = None
@@ -2464,10 +2341,6 @@ def aggregate_budget_items_python(
         ].append(
             item
         )
-
-    # ======================================================
-    # SÚČTY
-    # ======================================================
 
     result = []
 
@@ -2513,10 +2386,6 @@ def aggregate_budget_items_python(
                 result_unit = (
                     converted_unit
                 )
-
-            # Ak sa po konverzii
-            # objavia rozdielne MJ,
-            # radšej použijeme pôvodnú MJ.
 
             if (
                 converted_unit
@@ -2664,10 +2533,6 @@ def aggregate_budget_items_python(
             }
         )
 
-    # ======================================================
-    # PORADIE PODĽA PRVÉHO VÝSKYTU
-    # ======================================================
-
     result.sort(
         key=lambda item: (
             str(
@@ -2772,23 +2637,6 @@ def process_budget_python(
     - bez AI
     - konzervatívne zoskupovanie
     - Python sčítanie
-
-    NOVÉ:
-
-    - cudzie projektové hárky sa pri
-      spoľahlivej identifikácii vynechajú,
-
-    - hárky bez názvu stavby ostávajú,
-
-    - práca a materiál sa nezlučujú,
-
-    - podozrivé množstvá sa iba označia,
-      nikdy sa neopravujú automaticky.
-
-    project_hint je voliteľný.
-
-    Ak appka pozná názov stavby,
-    je najlepšie ho poslať sem.
     """
 
     items = (
@@ -2811,22 +2659,6 @@ def process_budget_python_with_diagnostics(
 ):
     """
     Diagnostická verzia.
-
-    Vracia:
-
-    {
-        "rows": [...],
-
-        "diagnostics": {
-            "primary_project_tokens": [...],
-            "skipped_foreign_sheets": [...],
-            "warnings": [...],
-            "item_count": ...
-        }
-    }
-
-    Túto funkciu môžeme neskôr použiť
-    v Streamlit UI na zobrazenie upozornení.
     """
 
     items = (
