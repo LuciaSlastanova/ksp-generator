@@ -533,81 +533,161 @@ def show_project_detail():
             "### 1️⃣ 🔎 Kontrola údajov hlavičky KSP"
         )
 
-        st.caption(
-            "AI navrhne údaje podľa podkladov. "
-            "Pred vytvorením Excelu ich môžeš "
-            "ľubovoľne opraviť."
-        )
+        # ==================================================
+        # AK UŽ JE HLAVIČKA ULOŽENÁ,
+        # NEVOLÁME AI AUTOMATICKY ANI ZBYTOČNE
+        # ==================================================
 
-        if st.button(
-            "Skontrolovať údaje hlavičky",
-            use_container_width=True
-        ):
+        if saved_header:
 
-            header_documents = [
-                doc
-                for doc in documents
-                if doc["document_type"]
-                in [
-                    "technical_report",
-                    "budget"
+            st.success(
+                "Hlavička projektu je už uložená. "
+                "Použijú sa uložené údaje."
+            )
+
+            if st.button(
+                "🔄 Znova skontrolovať hlavičku pomocou AI",
+                use_container_width=True,
+                key=f"recheck_header_{project_id}"
+            ):
+
+                header_documents = [
+                    doc
+                    for doc in documents
+                    if doc["document_type"]
+                    in [
+                        "technical_report",
+                        "budget"
+                    ]
                 ]
-            ]
 
-            if not header_documents:
+                if not header_documents:
 
-                st.warning(
-                    "Na kontrolu hlavičky chýba "
-                    "technická správa alebo rozpočet."
-                )
-
-            else:
-
-                with st.spinner(
-                    "Kontrolujem údaje hlavičky..."
-                ):
-
-                    header_text = (
-                        build_documents_text(
-                            header_documents
-                        )
+                    st.warning(
+                        "Na kontrolu hlavičky chýba "
+                        "technická správa alebo rozpočet."
                     )
 
-                    metadata = (
-                        extract_project_metadata(
-                            header_text
+                else:
+
+                    with st.spinner(
+                        "Kontrolujem údaje hlavičky..."
+                    ):
+
+                        header_text = (
+                            build_documents_text(
+                                header_documents
+                            )
                         )
-                    )
 
-                st.session_state[
-                    metadata_key
-                ] = metadata
-
-                # ------------------------------------------
-                # AI HODNOTY PREDVYPLNÍME DO EDITOVATEĽNÝCH POLÍ
-                # ------------------------------------------
-
-                for field in [
-                    "stavba",
-                    "objekt",
-                    "cast",
-                    "zhotovitel",
-                    "objednavatel"
-                ]:
-
-                    value = (
-                        metadata
-                        .get(field, {})
-                        .get(
-                            "value",
-                            "OVERIŤ"
+                        metadata = (
+                            extract_project_metadata(
+                                header_text
+                            )
                         )
-                    )
 
                     st.session_state[
-                        f"header_{field}_{project_id}"
-                    ] = value
+                        metadata_key
+                    ] = metadata
 
+                    for field in [
+                        "stavba",
+                        "objekt",
+                        "cast",
+                        "zhotovitel",
+                        "objednavatel"
+                    ]:
+
+                        value = (
+                            metadata
+                            .get(field, {})
+                            .get(
+                                "value",
+                                "OVERIŤ"
+                            )
+                        )
+
+                        st.session_state[
+                            f"header_{field}_{project_id}"
+                        ] = value
+
+        # ==================================================
+        # AK HLAVIČKA EŠTE NIE JE ULOŽENÁ,
+        # PONÚKNEME PRVÚ AI KONTROLU
+        # ==================================================
+
+        else:
+
+            st.caption(
+                "Hlavička ešte nie je uložená. "
+                "AI ju môže navrhnúť podľa podkladov."
+            )
+
+            if st.button(
+                "Skontrolovať údaje hlavičky",
+                use_container_width=True,
+                key=f"check_header_{project_id}"
+            ):
+
+                header_documents = [
+                    doc
+                    for doc in documents
+                    if doc["document_type"]
+                    in [
+                        "technical_report",
+                        "budget"
+                    ]
+                ]
+
+                if not header_documents:
+
+                    st.warning(
+                        "Na kontrolu hlavičky chýba "
+                        "technická správa alebo rozpočet."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Kontrolujem údaje hlavičky..."
+                    ):
+
+                        header_text = (
+                            build_documents_text(
+                                header_documents
+                            )
+                        )
+
+                        metadata = (
+                            extract_project_metadata(
+                                header_text
+                            )
+                        )
+
+                    st.session_state[
+                        metadata_key
+                    ] = metadata
+
+                    for field in [
+                        "stavba",
+                        "objekt",
+                        "cast",
+                        "zhotovitel",
+                        "objednavatel"
+                    ]:
+
+                        value = (
+                            metadata
+                            .get(field, {})
+                            .get(
+                                "value",
+                                "OVERIŤ"
+                            )
+                        )
+
+                        st.session_state[
+                            f"header_{field}_{project_id}"
+                        ] = value
         # ==================================================
         # EDITOVATEĽNÁ HLAVIČKA + ULOŽENIE
         # ==================================================
