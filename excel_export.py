@@ -1109,11 +1109,16 @@ def write_data_row(
         if value is None:
             value = ""
 
+        if (
+            field_name == "mnozstvo"
+            and isinstance(value, str)
+        ):
+            value = value.replace(".", ",")
+
         worksheet.cell(
             row=target_row,
             column=column_number
         ).value = value
-
 
 def merge_subprocess_block(
     worksheet,
