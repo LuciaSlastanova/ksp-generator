@@ -1118,11 +1118,7 @@ def extract_budget_items_python(
             )
         )
 
-        # Vyhadzujeme iba hárok,
-        # ktorý EXPLICITNE uvádza inú stavbu.
 
-        if project_status == "foreign":
-            continue
 
         # Unknown hárky bežne ponechávame.
 
