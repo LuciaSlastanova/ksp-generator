@@ -1330,15 +1330,27 @@ def extract_budget_items_python(
                 }
             )
 
-    # ======================================================
-    # KONTROLA PODOZRIVÝCH MNOŽSTIEV
-    # ======================================================
+# ======================================================
+# KONTROLA PODOZRIVÝCH MNOŽSTIEV
+# ======================================================
 
-    _attach_suspicious_quantity_warnings(
-        items
-    )
+_attach_suspicious_quantity_warnings(
+    items
+)
 
-    return items
+for item in items:
+    if _normalize_code(item.get("code", "")) == "151101102":
+        print(
+            "DEBUG PAZENIE:",
+            item.get("sheet"),
+            item.get("row_number"),
+            item.get("code"),
+            item.get("description"),
+            item.get("quantity"),
+            item.get("unit")
+        )
+
+return items
 
 
 # ==========================================================
