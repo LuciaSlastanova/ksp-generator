@@ -1110,6 +1110,9 @@ def _format_budget_quantity(
     Poskladá množstvo presne z Python agregácie.
 
     Nevykonáva ďalšie sčítanie ani prepočet.
+    Iba upraví zobrazenie čísla na slovenský zápis:
+    9075.4 -> 9075,4
+    57.0 -> 57
     """
 
     quantity_text = str(
@@ -1122,6 +1125,34 @@ def _format_budget_quantity(
 
     if not quantity_text:
         return ""
+
+    normalized = (
+        quantity_text
+        .replace("\xa0", "")
+        .replace(" ", "")
+        .replace(",", ".")
+    )
+
+    try:
+        number = float(normalized)
+
+        if number.is_integer():
+            quantity_text = str(
+                int(number)
+            )
+        else:
+            quantity_text = (
+                f"{number:.6f}"
+                .rstrip("0")
+                .rstrip(".")
+                .replace(".", ",")
+            )
+
+    except ValueError:
+        quantity_text = quantity_text.replace(
+            ".",
+            ","
+        )
 
     if unit_text:
         return f"{quantity_text} {unit_text}"
@@ -1395,6 +1426,8 @@ vytvor samostatné subprocesy.
 
 Ak množstvo pre konkrétny subproces v agregovanom
 zozname neexistuje, pole množstvo nechaj prázdne.
+Python po prijatí JSON doplní pri takomto jednorazovom
+subprocese hodnotu 1 ks.
 
 NEVYMÝŠĽAJ množstvo.
 
@@ -2130,6 +2163,15 @@ legal_basis
                     ""
                 ),
             )
+
+        elif not budget_group_key:
+            # Všeobecná jednorazová kontrola / činnosť,
+            # ktorá nemá vlastnú samostatnú výmeru
+            # v agregovanom rozpočte.
+            # Python jej deterministicky priradí 1 ks.
+            clean_row[
+                "mnozstvo"
+            ] = "1 ks"
 
         status = str(
             clean_row.get(
