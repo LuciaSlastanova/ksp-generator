@@ -333,11 +333,6 @@ def _extract_project_labels_from_sheet(
             if not normalized:
                 continue
 
-            # ----------------------------------------------
-            # Prípad:
-            # Stavba: Abrahám ...
-            # ----------------------------------------------
-
             same_cell_match = re.match(
                 (
                     r"^(stavba|nazov stavby|akcia|nazov akcie)"
@@ -361,11 +356,6 @@ def _extract_project_labels_from_sheet(
                     )
 
                 continue
-
-            # ----------------------------------------------
-            # Prípad:
-            # Stavba | Abrahám ...
-            # ----------------------------------------------
 
             if normalized in normalized_project_labels:
 
@@ -419,16 +409,6 @@ def _detect_primary_project_tokens(
 ):
     """
     Určí hlavný projekt workbooku.
-
-    Najlepšie je, keď appka pozná názov stavby
-    a pošle ho cez project_hint.
-
-    Ak nie, použije sa názov stavby,
-    ktorý sa najčastejšie opakuje
-    v hlavičkách jednotlivých hárkov.
-
-    Ak výsledok nie je dostatočne istý,
-    nič automaticky nevyradíme.
     """
 
     if project_hint:
@@ -512,15 +492,7 @@ def _sheet_project_status(
 ):
     """
     Výstup:
-
-    relevant
-        = hárok explicitne patrí projektu
-
-    foreign
-        = hárok explicitne uvádza inú stavbu
-
-    unknown
-        = názov stavby z hárku nevieme určiť
+    relevant / foreign / unknown
     """
 
     labels = (
@@ -574,14 +546,6 @@ def inspect_budget_sheets_python(
 ):
     """
     Diagnostická funkcia.
-
-    Ukáže:
-    - hlavný projekt,
-    - ktoré hárky sú relevantné,
-    - ktoré vyzerajú ako cudzie,
-    - ktoré nevieme určiť.
-
-    Nič sama nemení.
     """
 
     sheets = pd.read_excel(
@@ -664,7 +628,6 @@ def inspect_budget_sheets_python(
 
 # ==========================================================
 # ČÍTANIE PDF / DOCX / EXCEL
-# PRE OSTATNÉ ČASTI APPKY
 # ==========================================================
 
 def extract_text_from_pdf(
@@ -881,18 +844,6 @@ def extract_text_from_excel(
 def _infer_budget_category(
     description
 ):
-    """
-    Jednoduchá technická kategorizácia bez AI.
-
-    Hlavný účel:
-
-    NESPOJIŤ napr.:
-
-    Obsyp potrubia
-    +
-    Dodávka piesku na obsyp
-    """
-
     text = (
         _normalize_text(
             description
@@ -977,21 +928,8 @@ def extract_budget_items_python(
     include_unknown_sheets=True
 ):
     """
-    VŠEOBECNÁ funkcia.
-
     V každom hárku hľadá tabuľku:
-
     Kód | Popis | MJ | Množstvo
-
-    Hárky bez rozpoznateľného názvu stavby
-    sa NEVYHADZUJÚ.
-
-    Práca a materiál sa rozlišujú.
-
-    Kód položky môže byť pri staršom
-    rozpočte prázdny.
-
-    Rekapitulácie sa preskočia.
 
     NEVOLÁ AI.
     """
@@ -1060,16 +998,8 @@ def extract_budget_items_python(
             )
         )
 
-        # ==================================================
-        # REKAPITULÁCIA
-        # ==================================================
-
         if "rekapitul" in normalized_sheet_name:
             continue
-
-        # ==================================================
-        # KONTROLA PROJEKTU HÁRKU
-        # ==================================================
 
         project_status, project_labels = (
             _sheet_project_status(
@@ -1078,19 +1008,11 @@ def extract_budget_items_python(
             )
         )
 
-        # POZOR:
-        # foreign už automaticky NEVYHADZUJEME.
-        # Potrebujeme načítať všetky detailné hárky.
-
         if (
             project_status == "unknown"
             and not include_unknown_sheets
         ):
             continue
-
-        # ==================================================
-        # HĽADANIE HLAVIČKY TABUĽKY
-        # ==================================================
 
         header_row_index = None
         header_columns = None
@@ -1140,10 +1062,6 @@ def extract_budget_items_python(
             or header_columns is None
         ):
             continue
-
-        # ==================================================
-        # ČÍTANIE POLOŽIEK
-        # ==================================================
 
         for dataframe_index in range(
             header_row_index + 1,
@@ -1282,37 +1200,9 @@ def extract_budget_items_python(
                 }
             )
 
-    # ======================================================
-    # KONTROLA PODOZRIVÝCH MNOŽSTIEV
-    # ======================================================
-
     _attach_suspicious_quantity_warnings(
         items
     )
-
-    # ======================================================
-    # DOČASNÁ DIAGNOSTIKA PAŽENIA
-    # ======================================================
-
-    for item in items:
-        if (
-            _normalize_code(
-                item.get(
-                    "code",
-                    ""
-                )
-            )
-            == "151101102"
-        ):
-            print(
-                "DEBUG PAZENIE:",
-                item.get("sheet"),
-                item.get("row_number"),
-                item.get("code"),
-                item.get("description"),
-                item.get("quantity"),
-                item.get("unit")
-            )
 
     return items
 
@@ -1408,12 +1298,6 @@ def _append_item_warning(
 def _attach_suspicious_quantity_warnings(
     items
 ):
-    """
-    IBA upozorňuje.
-
-    Nikdy množstvo automaticky neopravuje.
-    """
-
     by_sheet = {}
 
     for item in items:
@@ -1585,23 +1469,8 @@ def _remove_pricing_bands(
     text
 ):
     """
-    Odstraňuje iba typické CENOVÉ PÁSMA,
+    Odstraňuje iba typické cenové pásma,
     ktoré nemenia technický význam práce.
-
-    Príklady:
-    - do 100 m3
-    - nad 100 do 1000 m3
-    - od 100 do 1000 m3
-    - na vzdialenosť do 1000 m
-    - za každých ďalších 1000 m
-
-    Neodstraňuje:
-    - DN
-    - hrúbku
-    - triedu betónu
-    - materiál
-    - SN
-    - PN
     """
 
     result = (
@@ -1694,10 +1563,6 @@ def _extract_critical_parameters(
 ):
     """
     Všeobecný technický podpis.
-
-    Zachováva parametre,
-    ktoré typicky znamenajú,
-    že položky sa NESMÚ zlúčiť.
     """
 
     text = (
@@ -1794,7 +1659,8 @@ def _extract_critical_parameters(
 
             value = "|".join(
                 part
-                for part in match.groups()
+                for part
+                in match.groups()
                 if part is not None
             )
 
@@ -1856,9 +1722,6 @@ def _remove_ksp_irrelevant_classifiers(
     Odstráni klasifikátory,
     ktoré menia cenu,
     ale obvykle nemenia KSP kontrolu.
-
-    Aktuálne:
-    trieda horniny pri výkope.
     """
 
     result = (
@@ -1936,8 +1799,7 @@ def _description_signature(
     description
 ):
     """
-    Vráti všeobecný technický podpis
-    položky pre KSP.
+    Vráti všeobecný technický podpis položky.
     """
 
     text = (
@@ -1989,20 +1851,9 @@ def _can_group_items(
     """
     Konzervatívne zoskupovanie.
 
-    Položky spojíme iba keď:
-
-    - majú rovnakú MJ,
-    - majú rovnakú kategóriu,
-    - nemajú konfliktné technické parametre,
-    - názov je rovnaký alebo veľmi podobný.
-
-    DÔLEŽITÉ:
-
-    práca != materiál
-
-    montáž != dodávka
-
-    skúška != realizačná položka
+    Všeobecné pravidlo:
+    ak obe položky majú kód a kódy sú rozdielne,
+    NESMÚ sa automaticky zlúčiť.
     """
 
     if (
@@ -2073,40 +1924,6 @@ def _can_group_items(
     ):
         return False
 
-    first_signature = (
-        _description_signature(
-            first[
-                "description"
-            ]
-        )
-    )
-
-    second_signature = (
-        _description_signature(
-            second[
-                "description"
-            ]
-        )
-    )
-
-    if (
-        first_signature
-        ==
-        second_signature
-    ):
-        return True
-
-    similarity = (
-        _description_similarity(
-            first[
-                "description"
-            ],
-            second[
-                "description"
-            ]
-        )
-    )
-
     first_code = (
         _normalize_code(
             first.get(
@@ -2125,17 +1942,70 @@ def _can_group_items(
         )
     )
 
+    # ------------------------------------------------------
+    # KĽÚČOVÁ VŠEOBECNÁ OPRAVA
+    # ------------------------------------------------------
+
     if (
         first_code
-        and first_code
-        ==
-        second_code
+        and second_code
+        and first_code != second_code
+    ):
+        return False
+
+    first_signature = (
+        _description_signature(
+            first[
+                "description"
+            ]
+        )
+    )
+
+    second_signature = (
+        _description_signature(
+            second[
+                "description"
+            ]
+        )
+    )
+
+    if (
+        first_code
+        and second_code
+        and first_code == second_code
+        and first_signature == second_signature
+    ):
+        return True
+
+    similarity = (
+        _description_similarity(
+            first[
+                "description"
+            ],
+            second[
+                "description"
+            ]
+        )
+    )
+
+    if (
+        first_code
+        and second_code
+        and first_code == second_code
         and similarity >= 0.78
     ):
         return True
 
-    if similarity >= 0.94:
-        return True
+    if (
+        not first_code
+        or not second_code
+    ):
+
+        if first_signature == second_signature:
+            return True
+
+        if similarity >= 0.94:
+            return True
 
     return False
 
@@ -2212,11 +2082,8 @@ def _convert_quantity_for_ksp(
     Konzervatívny odvodený prepočet.
 
     Zatiaľ iba:
-
     BETÓN:
     m2 × explicitná hrúbka = m3
-
-    Asfalt sa NEPREPOČÍTAVA.
     """
 
     normalized = (
@@ -2292,13 +2159,6 @@ def aggregate_budget_items_python(
 ):
     """
     Všeobecné zoskupovanie bez AI.
-
-    Algoritmus:
-
-    1. ide položku po položke,
-    2. hľadá technicky zhodnú skupinu,
-    3. pri neistote vytvorí novú skupinu,
-    4. Python sčíta iba potvrdené zhody.
     """
 
     groups = []
@@ -2353,11 +2213,8 @@ def aggregate_budget_items_python(
         )
 
         total_quantity = 0.0
-
         result_unit = None
-
         source_rows = []
-
         warnings = []
 
         for member in group[
@@ -2633,10 +2490,6 @@ def process_budget_python(
 ):
     """
     Verejná funkcia pre appku.
-
-    - bez AI
-    - konzervatívne zoskupovanie
-    - Python sčítanie
     """
 
     items = (
@@ -2657,10 +2510,6 @@ def process_budget_python_with_diagnostics(
     file_bytes,
     project_hint=None
 ):
-    """
-    Diagnostická verzia.
-    """
-
     items = (
         extract_budget_items_python(
             file_bytes,
@@ -2699,16 +2548,7 @@ def merge_aggregated_budget_rows(
     aggregated_lists
 ):
     """
-    Spojí výsledky z viacerých
-    rozpočtových Excelov.
-
-    Konzervatívne:
-
-    rovnaký group_key
-    +
-    rovnaká MJ
-    +
-    rovnaká kategória
+    Spojí výsledky z viacerých rozpočtových Excelov.
     """
 
     grouped = {}
@@ -2871,10 +2711,7 @@ def aggregate_budget_rows(
 ):
     """
     Staršia funkcia ostáva iba preto,
-    aby prípadný starší import
-    appku nezrútil.
-
-    Nový rozpočet ju už nepotrebuje.
+    aby prípadný starší import appku nezrútil.
     """
 
     if not isinstance(
